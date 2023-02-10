@@ -6105,3 +6105,66 @@ class PolynomialPetroClusterMap(IdentityMap):
         else:
             out = np.dot(self._derivmatrix(m.reshape(-1, 2)), v.reshape(2, -1))
             return out
+
+
+class VectorAmplitude(IdentityMap):
+    """
+    A vector amplitude map defined as
+
+    .. math::
+
+        v^2 = (v_x^2 + v_y^2 + v_z^2)
+
+    where :math:`v_x`, :math:`v_y` and :math:`v_z` are the
+    vector components. The derivative ...
+    """
+    _wires = None
+
+    def __init__(self, wires, mesh=None, nP=None, **kwargs):
+
+        super().__init__(mesh, nP, **kwargs)
+
+        self.wires = wires
+        self.model = None
+
+    @property
+    def wires(self):
+        """A wire map for the model components."""
+        return self._wires
+
+    @wires.setter
+    def wires(self, map: Wires):
+
+        if not isinstance(map, Wires):
+            raise TypeError("Input map should be of type Wires.")
+
+        self._nP = map.maps[0][1].shape[0]
+        self._wires = map
+
+    @property
+    def shape(self):
+        """
+        Shape of the matrix operation (number of indices x nP)
+        """
+        return self.wires.maps[0][1].shape
+
+    def _transform(self, model):
+        """
+        :param model:
+        :return:
+        """
+        return np.linalg.norm(self.wires*model, axis=0)
+
+    def deriv(self, m, v=None):
+        """
+        """
+        derivs = 0.
+        for key, wire in self.wires.maps:
+            A = sp.spdiags((wire*m) / (self._transform(m) + 1e-16), 0, self.nP, self.nP)
+
+            if v is not None:
+                derivs += A * wire.deriv(m) * v
+            else:
+                derivs += A * wire.deriv(m)
+
+        return derivs

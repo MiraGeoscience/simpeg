@@ -2277,7 +2277,7 @@ class UpdateSensitivityWeights(InversionDirective):
         wr = np.zeros_like(self.invProb.model)
         for reg in self.reg.objfcts:
             if not isinstance(reg, BaseSimilarityMeasure):
-                wr += reg.mapping.deriv(self.invProb.model).T * (
+                wr += reg.mapping.deriv(jtj_diag).T * (
                     (reg.mapping * jtj_diag) / reg.regularization_mesh.vol**2.0
                 )
         if self.normalization:
