@@ -3329,11 +3329,6 @@ class TileMap(IdentityMap):
 
     tol = 1e-8  # Tolerance to avoid zero division
     components = 1  # Number of components in the model. =3 for vector model
-    _global_mesh = None
-    _global_active = None
-    _local_mesh = None
-    _local_active = None
-    _projection = None
     _enforce_active = True
 
     def __init__(self, global_mesh: TreeMesh, global_active: bool, local_mesh: TreeMesh, **kwargs):
@@ -3347,6 +3342,11 @@ class TileMap(IdentityMap):
         local_mesh : discretize.TreeMesh
             Local TreeMesh for the simulation.
         """
+        self._global_mesh = None
+        self._global_active = None
+        self._local_mesh = None
+        self._local_active = None
+        self._projection = None
         kwargs.pop("mesh", None)
         if global_mesh._meshType != "TREE":
             raise ValueError("global_mesh must be a TreeMesh")
@@ -3430,13 +3430,16 @@ class TileMap(IdentityMap):
             getattr(self, "_global_mesh", None) is not None and
             getattr(self, "_global_active", None) is not None
         ):
+            in_extent = self.local_mesh.is_inside(self.global_mesh.gridCC)
+            volumes = self.global_mesh.cell_volumes.copy()
+            volumes[~in_extent] = 0.0
 
             in_local = self.local_mesh._get_containing_cell_indexes(
                 self.global_mesh.gridCC
             )
             nested = (
-                self.global_mesh.cell_levels_by_index(np.arange(self.global_mesh.nC)) <
-                self.local_mesh.cell_levels_by_index(in_local)
+                self.global_mesh.cell_levels_by_index(np.arange(self.global_mesh.nC)[in_extent]) <
+                self.local_mesh.cell_levels_by_index(in_local[in_extent])
              ).sum()
 
             if nested != 0:
@@ -3444,7 +3447,7 @@ class TileMap(IdentityMap):
 
             P = (
                 sp.csr_matrix(
-                    (self.global_mesh.cell_volumes, (in_local, np.arange(self.global_mesh.nC))),
+                    (volumes, (in_local, np.arange(self.global_mesh.nC))),
                     shape=(self.local_mesh.nC, self.global_mesh.nC),
                 )
                 * speye(self.global_mesh.nC)[:, self.global_active]
@@ -3455,7 +3458,7 @@ class TileMap(IdentityMap):
             if self.enforce_active:
                 self.local_active[
                     self.local_mesh._get_containing_cell_indexes(
-                        self.global_mesh.gridCC[self.global_active == False, :]
+                        self.global_mesh.gridCC[(self.global_active == False) & in_extent, :]
                     )
                 ] = False
 

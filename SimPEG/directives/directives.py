@@ -1348,6 +1348,7 @@ class SaveIterationsGeoH5(InversionDirective):
         self.sorting = None
         self._reshape = None
         self.h5_object = h5_object
+        self._joint_index = None
         setKwargs(self, **kwargs)
 
     def initialize(self):
@@ -1382,6 +1383,10 @@ class SaveIterationsGeoH5(InversionDirective):
             if dpred is None:
                 dpred = self.invProb.get_dpred(self.invProb.model)
                 self.invProb.dpred = dpred
+
+            if self.joint_index is not None:
+                dpred = self.invProb.dpred[self.joint_index]
+
             prop = self.stack_channels(dpred)
         elif self.attribute_type == "sensitivities":
             for directive in self.inversion.directiveList.dList:
@@ -1481,6 +1486,21 @@ class SaveIterationsGeoH5(InversionDirective):
 
             file_entity.values = raw_file
 
+
+    @property
+    def joint_index(self):
+        """
+        Index for joint inversions defining the element in the list of predicted data.
+        """
+        return self._joint_index
+
+    @joint_index.setter
+    def joint_index(self, value: int):
+
+        if not isinstance(value, int):
+            raise TypeError("Input 'joint_index' should be of type int")
+
+        self._joint_index = value
 
     @property
     def label(self):
