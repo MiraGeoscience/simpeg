@@ -127,10 +127,11 @@ waveform_value = [waveform.eval(t) for t in waveform_times]
 
 # Observation times for response (time channels)
 n_times = 8
-time_channels = np.logspace(-4, -2, n_times)
+time_channels = np.logspace(-4, -2.5, n_times)
+time_steps = [(5e-4, 4), (5e-5, 10), (5e-4, 10)]
 
 # Defining transmitter locations
-n_tx = 4
+n_tx = 5
 xtx, ytx, ztx = np.meshgrid(
     np.linspace(-200, 200, n_tx), np.linspace(-200, 200, n_tx), [50]
 )
@@ -217,17 +218,15 @@ mesh = refine_tree_xyz(
 
 # Mesh refinement near transmitters and receivers
 mesh = refine_tree_xyz(
-    mesh, receiver_locations, octree_levels=[2, 4], method="radial", finalize=False
+    mesh, receiver_locations, octree_levels=[4, 4], method="radial", finalize=False
 )
 
 # Refine core mesh region
 xp, yp, zp = np.meshgrid([-250.0, 250.0], [-250.0, 250.0], [-250.0, 0.0])
 xyz = np.c_[mkvc(xp), mkvc(yp), mkvc(zp)]
 mesh = refine_tree_xyz(mesh, xyz, octree_levels=[0, 2, 4], method="box", finalize=False)
-
 mesh.finalize()
 
-# octree = treemesh_2_octree(ws, mesh)
 ###############################################################
 # Create Conductivity Model and Mapping for OcTree Mesh
 # -----------------------------------------------------
@@ -308,20 +307,12 @@ def plot_model(model):
     ax2.set_xlim([-250, 250])
     ax2.set_ylim([-250, 250])
     ax2.set_aspect('equal')
+
+    ax2.scatter(receiver_locations[:, 0], receiver_locations[:, 1], 10, color='r')
     plt.show()
 
 
 plot_model(np.log10(plotting_map * model))
-
-######################################################
-# Define the Time-Stepping
-# ------------------------
-#
-# Stuff about time-stepping and some rule of thumb
-#
-
-time_steps = [(5e-4, 4), (5e-5, 5), (5e-4, 10), (1e-3, 6)]
-
 
 #######################################################################
 # Simulation: Time-Domain Response
@@ -352,49 +343,44 @@ def reshape(values):
     data[value_sortings[:, 0], value_sortings[:, 1], value_sortings[:, 2]] = values
     return data
 
+
 # Predict data for a given model
 dpred = simulation.dpred(model)
 floors = (
     np.ones_like(reshape(np.abs(dpred))) *
     np.median(reshape(np.abs(dpred)), axis=2).flatten()[:, None, None]
-    * 0.75
 ) + 1e-16
 noise = np.random.randn(dpred.shape[0]) * ( #1e-15)
             np.abs(dpred) * 0.02
 )
-
 data_object = data.Data(
     survey,
     dobs=dpred + noise,
     noise_floor=floors.flatten(order='F'),
-    # noise_floor=np.kron(
-    #     np.mean(np.abs(dpred).reshape), axis=1),
-    #     np.ones(n_times),
-    # )/6.
-    # noise_floor=np.kron(
-    #     np.ones(ntx),
-    #     np.r_[5e-13, 1e-13, 2e-14],
-    # )
-    # noise_floor=np.abs(dpred) * 0.1 + 1e-13
 )
 dmis = data_misfit.L2DataMisfit(simulation=simulation, data=data_object, model_map=maps.IdentityMap(nP=nC))
 reg = regularization.Sparse(
-    mesh, alpha_s=0.,
+    mesh, alpha_s=1.,  # Set alpha_s = 0 to remove the reference model
     indActive=ind_active,
     mapping=maps.IdentityMap(nP=nC),
     gradientType="total",
-    mref = np.log(1e-3) * np.ones(nC)
+    mref=np.log(1e-3) * np.ones(nC)
 )
 opt = optimization.ProjectedGNCG(
-    maxIter=20, lower=-np.inf, upper=np.inf, maxIterLS=10, maxIterCG=40, tolCG=1e-4
+    maxIter=20,
+    lower=-np.inf,
+    upper=np.inf,
+    maxIterLS=10,
+    maxIterCG=40,
+    tolCG=1e-4
 )
 inv_prob = inverse_problem.BaseInvProblem(dmis, reg, opt)
 inv = inversion.BaseInversion(
-    inv_prob, directiveList= [
-        directives.UpdateSensitivityWeights(
-            method="percent_amplitude",
-            threshold=5
-        ),
+    inv_prob, directiveList=[
+        # directives.UpdateSensitivityWeights(
+        #     method="percent_amplitude",
+        #     threshold=30.
+        # ),
         # directives.SaveIterationsGeoH5(octree, transforms=[plotting_map], sorting=mesh._ubc_order),
         # directives.SaveIterationsGeoH5(
         #     tem_survey,
@@ -403,12 +389,10 @@ inv = inversion.BaseInversion(
         #     association="VERTEX"
         # ),
         directives.Update_IRLS(
-            max_irls_iterations=2,
-            coolingRate=2,
-            coolEps_p=True,
-            prctile=90,
-            chifact_start=2.0,
-            chifact_target=1.0,
+            max_irls_iterations=0,
+            coolingRate=3,
+            chifact_start=5.0,
+            chifact_target=5.0,
         ),
         directives.UpdatePreconditioner(),
         directives.BetaEstimate_ByEig(beta0_ratio=1e+2, method="old")
@@ -439,7 +423,9 @@ plt.plot(reshape(np.r_[inv_prob.dpred]).squeeze().T, "r")
 plt.plot(reshape(data_object.standard_deviation).squeeze().T, "k--")
 plt.plot(reshape(-data_object.standard_deviation).squeeze().T, "k--")
 axs.set_yscale("symlog", linthresh=1e-13)
-axs.set_title("LP Predicted")
+axs.set_title("Obs - Predicted")
+axs.set_xlabel("Station ID #")
+axs.set_ylabel("Time (s)")
 axs.set_ylim([-1e-10, 0])
 
 plt.show()
