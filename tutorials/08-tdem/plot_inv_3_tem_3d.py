@@ -34,8 +34,8 @@ from SimPEG import dask
 from SimPEG.utils import plot2Ddata, surface2ind_topo, model_builder
 from SimPEG import data, data_misfit, directives, maps, optimization, regularization, inverse_problem, inversion
 import SimPEG.electromagnetics.time_domain as tdem
-from geoh5py.workspace import Workspace
-from geoh5py.objects import Curve
+# from geoh5py.workspace import Workspace
+# from geoh5py.objects import Curve
 from geoapps.driver_base.utils import treemesh_2_octree
 import numpy as np
 import matplotlib as mpl
@@ -51,7 +51,7 @@ save_file = False
 
 # sphinx_gallery_thumbnail_number = 3
 
-ws = Workspace(f"./Test_{time():.0f}.geoh5")
+# ws = Workspace(f"./Test_{time():.0f}.geoh5")
 
 ###############################################################
 # Defining Topography
@@ -187,7 +187,7 @@ for ii in range(ntx):
 
 value_sortings = np.vstack(value_sortings)
 survey = tdem.Survey(source_list)
-tem_survey = Curve.create(ws, vertices=receiver_locations, name="TEM Survey")
+# tem_survey = Curve.create(ws, vertices=receiver_locations, name="TEM Survey")
 ###############################################################
 # Create OcTree Mesh
 # ------------------
@@ -227,7 +227,7 @@ mesh = refine_tree_xyz(mesh, xyz, octree_levels=[0, 2, 4], method="box", finaliz
 
 mesh.finalize()
 
-octree = treemesh_2_octree(ws, mesh)
+# octree = treemesh_2_octree(ws, mesh)
 ###############################################################
 # Create Conductivity Model and Mapping for OcTree Mesh
 # -----------------------------------------------------
@@ -248,47 +248,71 @@ nC = int(ind_active.sum())
 model_map = maps.ExpMap() * maps.InjectActiveCells(mesh, ind_active, air_conductivity)
 
 # Define the model
-model = background_conductivity * np.ones(nC)
-# ind_block = (
-#     (mesh.gridCC[ind_active, 0] < 100.0)
-#     & (mesh.gridCC[ind_active, 0] > -100.0)
-#     & (mesh.gridCC[ind_active, 1] < 100.0)
-#     & (mesh.gridCC[ind_active, 1] > -100.0)
-#     & (mesh.gridCC[ind_active, 2] > -300.0)
-#     & (mesh.gridCC[ind_active, 2] < -150.0)
+model = background_conductivity * np.ones(mesh.n_cells)
+# face = np.r_[
+#     np.c_[-50, -100, -50],
+#     np.c_[-50, 100, -50],
+#     np.c_[50, 100, -50],
+#     np.c_[50, -100, -50]
+# ]
+#
+# ind_block = model_builder.PolygonInd(
+#     mesh,
+#     np.r_[
+#         face + np.c_[100, 0, 0],
+#         face + np.c_[-150, 0, -225]
+#     ]
 # )
-
-face = np.r_[
-    np.c_[-50, -100, -50],
-    np.c_[-50, 100, -50],
-    np.c_[50, 100, -50],
-    np.c_[50, -100, -50]
-]
-
-ind_block = model_builder.PolygonInd(
-    mesh,
-    np.r_[
-        face + np.c_[100, 0, 0],
-        face + np.c_[-150, 0, -225]
-    ]
-)
-model[ind_block[ind_active]] = block_conductivity
+ind_block = model_builder.getIndicesBlock(np.r_[-100, -100, -150], np.r_[100, 100, -50], mesh.cell_centers)
+model[ind_block] = block_conductivity
+model = model[ind_active]
 
 # Plot log-conductivity model
 plotting_map = maps.InjectActiveCells(mesh, ind_active, np.nan) * maps.ExpMap()
-plt.figure()
-ax1 = plt.subplot()
-mesh.plotSlice(
-    np.log10(plotting_map * model),
-    normal="Y",
-    ax=ax1,
-    grid=True,
-)
-ax1.set_title("Conductivity Model at Y = 0 m")
-ax1.set_xlim([-500, 500])
-ax1.set_ylim([-500, 0])
-ax1.set_aspect('equal')
-plt.show()
+
+
+def plot_model(model):
+    plt.figure(figsize=(5, 7))
+
+    ax1 = plt.subplot(2, 1, 2)
+    im = mesh.plotSlice(
+        model,
+        ax=ax1,
+        normal="Y",
+        grid=True,
+        clim=(-3, 0),
+        pcolor_opts={"cmap": mpl.cm.viridis},
+    )
+    ax1.set_title("")
+    ax1.set_xlabel("x (m)")
+    plt.colorbar(im[0])
+    ax1.set_ylabel("z (m)")
+    ax1.set_xlim([-250, 250])
+    ax1.set_ylim([-500, 0])
+    ax1.set_aspect('equal')
+
+    ax2 = plt.subplot(2, 1, 1)
+    im = mesh.plotSlice(
+        model,
+        normal="Z",
+        ax=ax2,
+        grid=True,
+        ind=60,
+        clim=(-3, 0),
+        pcolor_opts={"cmap": mpl.cm.viridis},
+    )
+    ax2.set_title("Recovered model")
+    ax2.set_xlabel("x (m)")
+    ax2.set_ylabel("y (m)")
+    plt.colorbar(im[0])
+    ax2.set_xlim([-250, 250])
+    ax2.set_ylim([-250, 250])
+    ax2.set_aspect('equal')
+    plt.show()
+
+
+plot_model(np.log10(plotting_map * model))
+
 ######################################################
 # Define the Time-Stepping
 # ------------------------
@@ -331,7 +355,9 @@ def reshape(values):
 # Predict data for a given model
 dpred = simulation.dpred(model)
 floors = (
-    np.ones_like(reshape(np.abs(dpred))) * np.median(reshape(np.abs(dpred)), axis=2).flatten()[:, None, None]*0.75
+    np.ones_like(reshape(np.abs(dpred))) *
+    np.median(reshape(np.abs(dpred)), axis=2).flatten()[:, None, None]
+    * 0.75
 ) + 1e-16
 noise = np.random.randn(dpred.shape[0]) * ( #1e-15)
             np.abs(dpred) * 0.02
@@ -351,97 +377,53 @@ data_object = data.Data(
     # )
     # noise_floor=np.abs(dpred) * 0.1 + 1e-13
 )
-
 dmis = data_misfit.L2DataMisfit(simulation=simulation, data=data_object, model_map=maps.IdentityMap(nP=nC))
-
 reg = regularization.Sparse(
     mesh, alpha_s=0.,
     indActive=ind_active,
     mapping=maps.IdentityMap(nP=nC),
-    gradientType="total"
+    gradientType="total",
+    mref = np.log(1e-3) * np.ones(nC)
 )
-m0 = np.log(2e-3) * np.ones(nC)
-reg.mref = np.log(1e-3) * np.ones(nC)
-reg.norms = np.c_[2, 0, 0, 0]
-
 opt = optimization.ProjectedGNCG(
     maxIter=20, lower=-np.inf, upper=np.inf, maxIterLS=10, maxIterCG=40, tolCG=1e-4
 )
-
 inv_prob = inverse_problem.BaseInvProblem(dmis, reg, opt)
-directive_list = [
-    directives.UpdateSensitivityWeights(
-        method="percent_amplitude",
-        threshold=5
-    ),
-    directives.SaveIterationsGeoH5(octree, transforms=[plotting_map], sorting=mesh._ubc_order),
-    directives.SaveIterationsGeoH5(
-        tem_survey,
-        attribute_type="predicted",
-        channels=[f"{val:.2e}" for val in time_channels],
-        association="VERTEX"
-    ),
-    directives.Update_IRLS(
-        max_irls_iterations=2,
-        coolingRate=2,
-        coolEps_p=True,
-        prctile=90,
-        chifact_start=2.0,
-        chifact_target=1.0,
-    ),
-    directives.UpdatePreconditioner(),
-    directives.BetaEstimate_ByEig(beta0_ratio=5e+2, method="old")
-]
-
 inv = inversion.BaseInversion(
-    inv_prob, directiveList=directive_list
+    inv_prob, directiveList= [
+        directives.UpdateSensitivityWeights(
+            method="percent_amplitude",
+            threshold=5
+        ),
+        # directives.SaveIterationsGeoH5(octree, transforms=[plotting_map], sorting=mesh._ubc_order),
+        # directives.SaveIterationsGeoH5(
+        #     tem_survey,
+        #     attribute_type="predicted",
+        #     channels=[f"{val:.2e}" for val in time_channels],
+        #     association="VERTEX"
+        # ),
+        directives.Update_IRLS(
+            max_irls_iterations=2,
+            coolingRate=2,
+            coolEps_p=True,
+            prctile=90,
+            chifact_start=2.0,
+            chifact_target=1.0,
+        ),
+        directives.UpdatePreconditioner(),
+        directives.BetaEstimate_ByEig(beta0_ratio=1e+2, method="old")
+    ]
 )
 
 # Run the inversion
+m0 = np.log(2e-3) * np.ones(nC)
 mrec = inv.run(m0)
-
 
 # Plot recovered model
 recovered_conductivity_model_log10 = np.log10(plotting_map * mrec)
 
-fig = plt.figure(figsize=(10, 8))
+plot_model(recovered_conductivity_model_log10)
 
-ax1 = plt.subplot(2,1,2)
-im = mesh.plotSlice(
-    recovered_conductivity_model_log10,
-    ax=ax1,
-    normal="Y",
-    grid=True,
-    # clim=(-3, 0),
-    pcolor_opts={"cmap": mpl.cm.viridis},
-)
-ax1.set_title("Lp Model")
-ax1.set_xlabel("x (m)")
-plt.colorbar(im[0])
-ax1.set_ylabel("z (m)")
-ax1.set_xlim([-500, 500])
-ax1.set_ylim([-500, 0])
-ax1.set_aspect('equal')
-plt.show()
-
-if hasattr(inv_prob, "l2model"):
-    ax2 = plt.subplot(2,1,1)
-    im = mesh.plotSlice(
-        np.log10(plotting_map * inv_prob.l2model),
-        normal="Y",
-        ax=ax2,
-        grid=True,
-        # clim=(-3, 0),
-        pcolor_opts={"cmap": mpl.cm.viridis},
-    )
-    ax2.set_title("L2 Model")
-    ax2.set_xlabel("x (m)")
-    ax2.set_ylabel("z (m)")
-    plt.colorbar(im[0])
-    ax2.set_xlim([-500, 500])
-    ax2.set_ylim([-500, 0])
-    ax2.set_aspect('equal')
-    plt.show()
 #######################################################
 # Optional: Export Data
 # ---------------------
@@ -450,7 +432,7 @@ if hasattr(inv_prob, "l2model"):
 #
 
 plt.figure()
-axs = plt.subplot(2,1,2)
+axs = plt.subplot()
 plt.plot(reshape(dpred).squeeze().T, "k")
 plt.plot(reshape(data_object.dobs).squeeze().T, "b")
 plt.plot(reshape(np.r_[inv_prob.dpred]).squeeze().T, "r")
@@ -460,17 +442,18 @@ axs.set_yscale("symlog", linthresh=1e-13)
 axs.set_title("LP Predicted")
 axs.set_ylim([-1e-10, 0])
 
-if hasattr(inv_prob, "l2model"):
-    axs = plt.subplot(2,1,1)
-    plt.plot(reshape(dpred).squeeze().T, "k")
-    plt.plot(reshape(data_object.dobs).squeeze().T, "b")
-    plt.plot(reshape(simulation.dpred(inv_prob.l2model)).squeeze().T, "r")
-    plt.plot(reshape(data_object.standard_deviation).squeeze().T, "k--")
-    plt.plot(reshape(-data_object.standard_deviation).squeeze().T, "k--")
-    axs.set_yscale("symlog", linthresh=1e-14)
-    axs.set_title("L2 Predicted")
-    axs.set_ylim([-1e-10, 0])
-    plt.show()
+plt.show()
+# if hasattr(inv_prob, "l2model"):
+#     axs = plt.subplot(2,1,1)
+#     plt.plot(reshape(dpred).squeeze().T, "k")
+#     plt.plot(reshape(data_object.dobs).squeeze().T, "b")
+#     plt.plot(reshape(simulation.dpred(inv_prob.l2model)).squeeze().T, "r")
+#     plt.plot(reshape(data_object.standard_deviation).squeeze().T, "k--")
+#     plt.plot(reshape(-data_object.standard_deviation).squeeze().T, "k--")
+#     axs.set_yscale("symlog", linthresh=1e-14)
+#     axs.set_title("L2 Predicted")
+#     axs.set_ylim([-1e-10, 0])
+#     plt.show()
 
 if save_file:
 
