@@ -31,7 +31,7 @@ from .utils.solver_utils import (
 )
 
 
-__version__ = "0.15.1.dev9+geoapps.0.10.0"
+__version__ = "0.15.1.dev10+geoapps.0.10.0"
 __author__ = "SimPEG Team"
 __license__ = "MIT"
 __copyright__ = "2013 - 2020, SimPEG Team, http://simpeg.xyz"
