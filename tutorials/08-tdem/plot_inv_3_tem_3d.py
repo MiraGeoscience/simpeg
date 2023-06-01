@@ -351,9 +351,9 @@ dpred = simulation.dpred(model)
 floors = (
     np.ones_like(reshape(np.abs(dpred))) *
     np.median(reshape(np.abs(dpred)), axis=2).flatten()[:, None, None]
-).flatten(order='F') + 1e-16
+).flatten(order='F')
 
-floors = np.asarray(array.einsum('ij,ij->i',  simulation.Jmatrix,  simulation.Jmatrix)**0.5)
+# floors += np.asarray(array.einsum('ij,ij->i',  simulation.Jmatrix,  simulation.Jmatrix)**0.5)
 
 noise = np.random.randn(dpred.shape[0]) * ( #1e-15)
             np.abs(dpred) * 0.02
@@ -380,7 +380,7 @@ opt = optimization.ProjectedGNCG(
     tolCG=1e-4
 )
 
-# Write a conjugate graditent solver for the Hessian
+# Write a conjugate gradient solver for the Hessian
 
 
 inv_prob = inverse_problem.BaseInvProblem(dmis, reg, opt)
@@ -400,11 +400,11 @@ inv = inversion.BaseInversion(
         directives.Update_IRLS(
             max_irls_iterations=0,
             coolingRate=2,
-            chifact_start=1.0,
-            chifact_target=1.0,
+            chifact_start=5.0,
+            chifact_target=5.0,
         ),
         directives.UpdatePreconditioner(),
-        directives.BetaEstimate_ByEig(beta0_ratio=1e+0, method="old")
+        directives.BetaEstimate_ByEig(beta0_ratio=1e+1, method="old")
     ]
 )
 
