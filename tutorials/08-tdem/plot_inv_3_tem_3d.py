@@ -27,7 +27,7 @@ to simulate the fields at each time channel with sufficient accuracy.
 # Import Modules
 # --------------
 #
-from dask import array
+
 from discretize import TreeMesh
 from discretize.utils import mkvc, refine_tree_xyz
 from SimPEG import dask
@@ -36,7 +36,7 @@ from SimPEG import data, data_misfit, directives, maps, optimization, regulariza
 import SimPEG.electromagnetics.time_domain as tdem
 # from geoh5py.workspace import Workspace
 # from geoh5py.objects import Curve
-# from geoapps.driver_base.utils import treemesh_2_octree
+from geoapps.driver_base.utils import treemesh_2_octree
 import numpy as np
 import matplotlib as mpl
 import matplotlib.pyplot as plt
@@ -239,7 +239,7 @@ mesh.finalize()
 # Conductivity in S/m
 air_conductivity = np.log(1e-8)
 background_conductivity = np.log(1e-3)
-block_conductivity = np.log(1e+1)
+block_conductivity = np.log(1e+0)
 
 # Active cells are cells below the surface.
 ind_active = surface2ind_topo(mesh, topo_xyz)
@@ -279,7 +279,7 @@ def plot_model(model):
         ax=ax1,
         normal="Y",
         grid=True,
-        # clim=(-3, 0),
+        clim=(-3, 0),
         pcolor_opts={"cmap": mpl.cm.viridis},
     )
     ax1.set_title("")
@@ -297,7 +297,7 @@ def plot_model(model):
         ax=ax2,
         grid=True,
         ind=60,
-        # clim=(-3, 0),
+        clim=(-3, 0),
         pcolor_opts={"cmap": mpl.cm.viridis},
     )
     ax2.set_title("Recovered model")
@@ -345,23 +345,20 @@ def reshape(values):
 
 
 # Predict data for a given model
-simulation.model = model
-
 dpred = simulation.dpred(model)
-floors = (
-    np.ones_like(reshape(np.abs(dpred))) *
-    np.median(reshape(np.abs(dpred)), axis=2).flatten()[:, None, None]
-).flatten(order='F')
+# floors = (
+#     np.ones_like(reshape(np.abs(dpred))) *
+#     np.max(reshape(np.abs(dpred)), axis=2).flatten()[:, None, None] / 4.
+# ) + 1e-15
 
-# floors += np.asarray(array.einsum('ij,ij->i',  simulation.Jmatrix,  simulation.Jmatrix)**0.5)
-
+floors = np.abs(simulation.dpred(np.ones_like(model) * np.log(5e-3)))
 noise = np.random.randn(dpred.shape[0]) * ( #1e-15)
             np.abs(dpred) * 0.02
 )
 data_object = data.Data(
     survey,
     dobs=dpred + noise,
-    noise_floor=floors,
+    noise_floor=floors.flatten(order='F'),
 )
 dmis = data_misfit.L2DataMisfit(simulation=simulation, data=data_object, model_map=maps.IdentityMap(nP=nC))
 reg = regularization.Sparse(
@@ -372,17 +369,13 @@ reg = regularization.Sparse(
     mref=np.log(1e-3) * np.ones(nC)
 )
 opt = optimization.ProjectedGNCG(
-    maxIter=10,
+    maxIter=15,
     lower=-np.inf,
     upper=np.inf,
     maxIterLS=10,
     maxIterCG=40,
     tolCG=1e-4
 )
-
-# Write a conjugate gradient solver for the Hessian
-
-
 inv_prob = inverse_problem.BaseInvProblem(dmis, reg, opt)
 inv = inversion.BaseInversion(
     inv_prob, directiveList=[
@@ -399,9 +392,9 @@ inv = inversion.BaseInversion(
         # ),
         directives.Update_IRLS(
             max_irls_iterations=0,
-            coolingRate=2,
-            chifact_start=5.0,
-            chifact_target=5.0,
+            coolingRate=3,
+            chifact_start=0.1,
+            chifact_target=0.1,
         ),
         directives.UpdatePreconditioner(),
         directives.BetaEstimate_ByEig(beta0_ratio=1e+1, method="old")
@@ -416,6 +409,7 @@ mrec = inv.run(m0)
 recovered_conductivity_model_log10 = np.log10(plotting_map * mrec)
 
 plot_model(recovered_conductivity_model_log10)
+
 #######################################################
 # Optional: Export Data
 # ---------------------
@@ -433,7 +427,7 @@ plt.plot(reshape(-data_object.standard_deviation).squeeze().T, "k--")
 axs.set_yscale("symlog", linthresh=1e-13)
 axs.set_title("Obs - Predicted")
 axs.set_xlabel("Station ID #")
-axs.set_ylabel("Time (s)")
+axs.set_ylabel("dBdt (T/s)")
 axs.set_ylim([-1e-10, 0])
 
 plt.show()
