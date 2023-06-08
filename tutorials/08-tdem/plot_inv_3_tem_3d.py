@@ -346,12 +346,12 @@ def reshape(values):
 
 # Predict data for a given model
 dpred = simulation.dpred(model)
-# floors = (
-#     np.ones_like(reshape(np.abs(dpred))) *
-#     np.max(reshape(np.abs(dpred)), axis=2).flatten()[:, None, None] / 4.
-# ) + 1e-15
+floors = (
+    np.ones_like(reshape(np.abs(dpred))) *
+    np.max(reshape(np.abs(dpred)), axis=2).flatten()[:, None, None] / 4.
+) + 1e-15
 
-floors = np.abs(simulation.dpred(np.ones_like(model) * np.log(5e-3)))
+# floors = np.abs(simulation.dpred(np.ones_like(model) * np.log(5e-3)))
 noise = np.random.randn(dpred.shape[0]) * ( #1e-15)
             np.abs(dpred) * 0.02
 )
@@ -379,10 +379,10 @@ opt = optimization.ProjectedGNCG(
 inv_prob = inverse_problem.BaseInvProblem(dmis, reg, opt)
 inv = inversion.BaseInversion(
     inv_prob, directiveList=[
-        # directives.UpdateSensitivityWeights(
-        #     method="percent_amplitude",
-        #     threshold=30.
-        # ),
+        directives.UpdateSensitivityWeights(
+            method="percent_amplitude",
+            threshold=30.
+        ),
         # directives.SaveIterationsGeoH5(octree, transforms=[plotting_map], sorting=mesh._ubc_order),
         # directives.SaveIterationsGeoH5(
         #     tem_survey,
@@ -392,7 +392,7 @@ inv = inversion.BaseInversion(
         # ),
         directives.Update_IRLS(
             max_irls_iterations=0,
-            coolingRate=3,
+            coolingRate=2,
             chifact_start=0.1,
             chifact_target=0.1,
         ),
