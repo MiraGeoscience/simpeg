@@ -262,7 +262,7 @@ model = background_conductivity * np.ones(mesh.n_cells)
 #         face + np.c_[-150, 0, -225]
 #     ]
 # )
-ind_block = model_builder.getIndicesBlock(np.r_[-100, -100, -150], np.r_[100, 100, -50], mesh.cell_centers)
+ind_block = model_builder.getIndicesBlock(np.r_[-50, -50, -150], np.r_[50, 50, -50], mesh.cell_centers)
 model[ind_block] = block_conductivity
 model = model[ind_active]
 
@@ -346,10 +346,12 @@ def reshape(values):
 
 # Predict data for a given model
 dpred = simulation.dpred(model)
-floors = (
-    np.ones_like(reshape(np.abs(dpred))) *
-    np.median(reshape(np.abs(dpred)), axis=2).flatten()[:, None, None]
-) + 1e-16
+# floors = (
+#     np.ones_like(reshape(np.abs(dpred))) *
+#     np.max(reshape(np.abs(dpred)), axis=2).flatten()[:, None, None] / 4.
+# ) + 1e-15
+
+floors = np.abs(simulation.dpred(np.ones_like(model) * np.log(5e-3)))
 noise = np.random.randn(dpred.shape[0]) * ( #1e-15)
             np.abs(dpred) * 0.02
 )
@@ -360,14 +362,14 @@ data_object = data.Data(
 )
 dmis = data_misfit.L2DataMisfit(simulation=simulation, data=data_object, model_map=maps.IdentityMap(nP=nC))
 reg = regularization.Sparse(
-    mesh, alpha_s=1.,  # Set alpha_s = 0 to remove the reference model
+    mesh, alpha_s=0.,  # Set alpha_s = 0 to remove the reference model
     indActive=ind_active,
     mapping=maps.IdentityMap(nP=nC),
     gradientType="total",
     mref=np.log(1e-3) * np.ones(nC)
 )
 opt = optimization.ProjectedGNCG(
-    maxIter=20,
+    maxIter=15,
     lower=-np.inf,
     upper=np.inf,
     maxIterLS=10,
@@ -391,11 +393,11 @@ inv = inversion.BaseInversion(
         directives.Update_IRLS(
             max_irls_iterations=0,
             coolingRate=3,
-            chifact_start=5.0,
-            chifact_target=5.0,
+            chifact_start=0.1,
+            chifact_target=0.1,
         ),
         directives.UpdatePreconditioner(),
-        directives.BetaEstimate_ByEig(beta0_ratio=1e+2, method="old")
+        directives.BetaEstimate_ByEig(beta0_ratio=1e+1, method="old")
     ]
 )
 
@@ -425,7 +427,7 @@ plt.plot(reshape(-data_object.standard_deviation).squeeze().T, "k--")
 axs.set_yscale("symlog", linthresh=1e-13)
 axs.set_title("Obs - Predicted")
 axs.set_xlabel("Station ID #")
-axs.set_ylabel("Time (s)")
+axs.set_ylabel("dBdt (T/s)")
 axs.set_ylim([-1e-10, 0])
 
 plt.show()
