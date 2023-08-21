@@ -375,7 +375,7 @@ class GravitySimulationDriver(BaseOctreeSimulationDriver):
         return self._simulation
 
 
-class ExampleDriver:
+class SetupExample:
     """
     The example driver.
     """
@@ -386,13 +386,15 @@ class ExampleDriver:
         extent: float = 30,
         grid_size: int = 20,
         height: float = 5.0,
+        receiver_locations: np.ndarray | None = None,
+        topography: np.ndarray | None = None,
         **kwargs,
     ):
         self.extent = extent
         self.height = height
         self.grid_size = grid_size
 
-        self.driver = driver(**kwargs)
+        self.driver = driver(self.locations, self.topography, **kwargs)
 
     @property
     def topography(self) -> np.ndarray:

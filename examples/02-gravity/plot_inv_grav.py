@@ -18,7 +18,7 @@ from SimPEG import (
     directives,
     inversion,
 )
-from SimPEG.utils.drivers.simulation_driver import GravityExampleDriver
+from SimPEG.utils.drivers.simulation_driver import SetupExample, GravitySimulationDriver
 from SimPEG import utils
 
 ###############################################################################
@@ -30,7 +30,7 @@ from SimPEG import utils
 # Create a global survey and mesh and simulate some data
 #
 #
-driver = GravityExampleDriver()
+driver = SetupExample(GravitySimulationDriver).driver
 model = np.zeros(driver.mesh.nC)
 ind = utils.model_builder.getIndicesBlock(
     np.r_[-10, -10, -30],
