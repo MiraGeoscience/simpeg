@@ -24,15 +24,15 @@ class OctreeDriver:
     _depth_core: tuple[float]
     _locations: np.ndarray
     _padding_distance: tuple[float]
-    _refinements: dict[np.ndarray, dict]
+    _refinements: list[dict]
 
     def __init__(
         self,
         locations: np.ndarray | list,
         cell_size: tuple[float, float, float] | None = None,
-        depth_core: float = 0.0,
+        depth_core: float | None = None,
         padding_distance: tuple[float] = (0.0, 0.0, 0.0),
-        refinements: dict[np.ndarray, dict] | None = None,
+        refinements: list[dict] | None = None,
     ):
         self._mesh: TreeMesh | None = None
         self._cell_size: tuple[float, float, float] | None = None
@@ -73,6 +73,28 @@ class OctreeDriver:
         self._cell_size = values
 
     @property
+    def depth_core(self):
+        """
+        The depth of the core region of the mesh.
+
+        Uses the half width of the locations if not provided.
+        """
+        if self._depth_core is None:
+            extent = self.locations.max(axis=0) - self.locations.min(axis=0)
+            self._depth_core = np.max(extent) / 2.0
+
+        return self._depth_core
+
+    @depth_core.setter
+    def depth_core(self, value):
+        if not isinstance(value, (float, type(None))):
+            raise TypeError(
+                f"Attribute 'depth_core' must be of type float, not {type(value)}."
+            )
+
+        self._depth_core = value
+
+    @property
     def locations(self) -> np.ndarray:
         """
         The receiver locations for the simulation.
@@ -110,10 +132,10 @@ class OctreeDriver:
                 mesh_type="tree",
             )
 
-            for xyz, refinement in self.refinements.items():
+            for refinement in self.refinements:
                 self._mesh = refine_tree_xyz(
                     self._mesh,
-                    xyz,
+                    refinement["locations"],
                     method=refinement["type"],
                     octree_levels=refinement["levels"],
                     finalize=False,
@@ -131,36 +153,33 @@ class OctreeDriver:
         Defaults to 4 levels of 'surface' refinement on the locations.
         """
         if self._refinements is None:
-            self._refinements = {
-                self.locations: {
+            self._refinements = [
+                {
+                    "locations": self.locations,
                     "type": "surface",
                     "levels": (4, 4, 4),
                 }
-            }
+            ]
         return self._refinements
 
     @refinements.setter
     def refinements(self, refinements: dict | None):
-        if not isinstance(refinements, (dict, type(None))):
+        if not isinstance(refinements, (list, type(None))):
             raise TypeError(
                 f"Attribute 'refinements' must be of type dict, not {type(refinements)}."
             )
 
-        for key, value in refinements.items():
-            if not isinstance(key, np.ndarray):
-                raise TypeError(
-                    f"Attribute 'refinements' must be of type np.ndarray, not {type(key)}."
-                )
-
+        for value in refinements:
             if not isinstance(value, dict):
                 raise TypeError(
                     f"Attribute 'refinements' must be of type dict, not {type(value)}."
                 )
-
-            if "type" not in value.keys() or "levels" not in value.keys():
+            if list(value) != ["locations", "type", "levels"]:
                 raise KeyError(
-                    "Attribute 'refinements' must contain keys 'type' and 'levels'."
+                    "Attribute 'refinements' must contain 'locations', 'type' and 'levels'."
                 )
+            if not isinstance(value.get("locations", None), np.ndarray):
+                raise TypeError("Attribute 'locations' must be of type np.ndarray.")
 
         self._refinements = refinements
 
@@ -244,16 +263,18 @@ class BaseOctreeSimulationDriver(ABC):
         if getattr(self, "_mesh_driver", None) is None:
             self._mesh_driver = OctreeDriver(
                 self.locations,
-                refinements={
-                    self.receiver_locations: {
+                refinements=[
+                    {
+                        "locations": self.receiver_locations,
                         "type": "surface",
                         "levels": (4, 4, 4),
                     },
-                    self.topography: {
+                    {
+                        "locations": self.topography,
                         "type": "surface",
                         "levels": (0, 0, 4),
                     },
-                },
+                ],
             )
         return self._mesh_driver
 
@@ -343,8 +364,10 @@ class GravitySimulationDriver(BaseOctreeSimulationDriver):
         See BaseExampleDriver.
     """
 
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
+    def __init__(
+        self, receiver_locations: np.ndarray, topography: np.ndarray, **kwargs
+    ):
+        super().__init__(receiver_locations, topography, **kwargs)
 
     @property
     def survey(self):
@@ -380,6 +403,9 @@ class SetupExample:
     The example driver.
     """
 
+    _receiver_locations: np.ndarray
+    _topography: np.ndarray
+
     def __init__(
         self,
         driver: type(BaseOctreeSimulationDriver),
@@ -390,11 +416,13 @@ class SetupExample:
         topography: np.ndarray | None = None,
         **kwargs,
     ):
-        self.extent = extent
-        self.height = height
-        self.grid_size = grid_size
+        self.extent: float = extent
+        self.grid_size: int = grid_size
+        self.height: float = height
+        self.topography = topography
+        self.receiver_locations = receiver_locations
 
-        self.driver = driver(self.locations, self.topography, **kwargs)
+        self.driver = driver(self.receiver_locations, self.topography, **kwargs)
 
     @property
     def topography(self) -> np.ndarray:
@@ -402,7 +430,7 @@ class SetupExample:
         The topography locations defaulted to a Gaussian surface with twice
         the data extent.
         """
-        if self.driver.topography is None:
+        if self._topography is None:
             extent = self.extent * 2.0
 
             xr = np.linspace(-extent, extent, self.grid_size * 2)
@@ -411,27 +439,43 @@ class SetupExample:
 
             # Gaussian surface
             z = -np.exp((x**2 + y**2) / 75**2)
-            self.driver.topography = np.c_[
-                utils.mkvc(x.T), utils.mkvc(y.T), utils.mkvc(z.T)
-            ]
+            self._topography = np.c_[utils.mkvc(x.T), utils.mkvc(y.T), utils.mkvc(z.T)]
 
-        return self.driver.topography
+        return self._topography
+
+    @topography.setter
+    def topography(self, topography: np.ndarray | None):
+        if not isinstance(topography, (np.ndarray, type(None))):
+            raise TypeError(
+                f"Attribute 'topography' must be of type np.ndarray, not {type(topography)}."
+            )
+
+        self._topography = topography
 
     @property
-    def locations(self) -> np.ndarray:
+    def receiver_locations(self) -> np.ndarray:
         """
         The receiver locations for the simulation.
         """
-        if self.driver.receiver_locations is None:
+        if self._receiver_locations is None:
             xy_locations = self.make_grid(self.extent, self.grid_size)
             # Drape the locations on topo
             z_interp = LinearNDInterpolator(
                 self.topography[:, :2], self.topography[:, 2]
             )
             elevation = z_interp(xy_locations) + self.height
-            self.driver.receiver_locations = np.c_[xy_locations, elevation]
+            self._receiver_locations = np.c_[xy_locations, elevation]
 
-        return self.driver.receiver_locations
+        return self._receiver_locations
+
+    @receiver_locations.setter
+    def receiver_locations(self, locations: np.ndarray | None):
+        if not isinstance(locations, (np.ndarray, type(None))):
+            raise TypeError(
+                f"Attribute 'receiver_locations' must be of type np.ndarray, not {type(locations)}."
+            )
+
+        self._receiver_locations = locations
 
     @staticmethod
     def make_grid(extent, resolution) -> np.ndarray:
