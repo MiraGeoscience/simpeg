@@ -2,7 +2,7 @@ import shutil
 import unittest
 import numpy as np
 
-from discretize.utils import meshutils, active_from_xyz
+from discretize.utils import mesh_builder_xyz, refine_tree_xyz, active_from_xyz
 from SimPEG import (
     directives,
     maps,
@@ -59,14 +59,14 @@ class MagInvLinProblemTest(unittest.TestCase):
         survey = mag.Survey(srcField)
 
         # self.mesh.finalize()
-        self.mesh = meshutils.mesh_builder_xyz(
+        self.mesh = mesh_builder_xyz(
             xyzLoc,
             h,
             padding_distance=padDist,
             mesh_type="TREE",
         )
 
-        self.mesh = meshutils.refine_tree_xyz(
+        self.mesh = refine_tree_xyz(
             self.mesh,
             topo,
             method="surface",
@@ -81,7 +81,7 @@ class MagInvLinProblemTest(unittest.TestCase):
 
         # We can now create a susceptibility model and generate data
         # Lets start with a simple block in half-space
-        self.model = utils.model_builder.addBlock(
+        self.model = utils.model_builder.add_block(
             self.mesh.gridCC,
             np.zeros(self.mesh.nC),
             np.r_[-20, -20, -15],

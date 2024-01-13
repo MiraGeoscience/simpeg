@@ -3,6 +3,7 @@ import scipy.sparse as sp
 from .....electromagnetics.static.induced_polarization.simulation import (
     BaseIPSimulation as Sim,
 )
+
 from .....data import Data
 import dask.array as da
 from dask.distributed import Future
@@ -11,10 +12,11 @@ import numcodecs
 
 numcodecs.blosc.use_threads = False
 
-Sim.sensitivity_path = './sensitivity/'
+Sim.sensitivity_path = "./sensitivity/"
 
 from ..resistivity.simulation import (
-    compute_J, dask_getSourceTerm,
+    compute_J,
+    dask_getSourceTerm,
 )
 
 Sim.compute_J = compute_J
@@ -24,7 +26,6 @@ Sim.getSourceTerm = dask_getSourceTerm
 def dask_fields(self, m=None, return_Ainv=False):
     if m is not None:
         self.model = m
-
 
     A = self.getA()
     Ainv = self.solver(A, **self.solver_opts)
@@ -41,8 +42,8 @@ def dask_fields(self, m=None, return_Ainv=False):
         for src in self.survey.source_list:
             for rx in src.receiver_list:
                 if (
-                        rx.data_type == "apparent_chargeability"
-                        or self._data_type == "apparent_chargeability"
+                    rx.data_type == "apparent_chargeability"
+                    or self._data_type == "apparent_chargeability"
                 ):
                     scale[src, rx] = 1.0 / rx.eval(src, self.mesh, f)
         self._scale = scale.dobs
@@ -57,7 +58,7 @@ Sim.fields = dask_fields
 
 
 def dask_dpred(self, m=None, f=None, compute_J=False):
-    """
+    r"""
     dpred(m, f=None)
     Create the projected data from a model.
     The fields, f, (if provided) will be used for the predicted data
@@ -69,6 +70,7 @@ def dask_dpred(self, m=None, f=None, compute_J=False):
 
     Where P is a projection of the fields onto the data space.
     """
+
     if self.survey is None:
         raise AttributeError(
             "The survey has not yet been set and is required to compute "
@@ -94,7 +96,7 @@ Sim.dpred = dask_dpred
 
 def dask_getJtJdiag(self, m, W=None):
     """
-        Return the diagonal of JtJ
+    Return the diagonal of JtJ
     """
     self.model = m
     if self._jtjdiag is None:
@@ -104,9 +106,9 @@ def dask_getJtJdiag(self, m, W=None):
         if W is None:
             W = self._scale * np.ones(self.nD)
         else:
-            W = (self._scale * W.diagonal())**2.0
+            W = (self._scale * W.diagonal()) ** 2.0
 
-        diag = da.einsum('i,ij,ij->j', W, self.Jmatrix, self.Jmatrix)
+        diag = da.einsum("i,ij,ij->j", W, self.Jmatrix, self.Jmatrix)
 
         if isinstance(diag, da.Array):
             diag = np.asarray(diag.compute())
@@ -121,7 +123,7 @@ Sim.getJtJdiag = dask_getJtJdiag
 
 def dask_Jvec(self, m, v, f=None):
     """
-        Compute sensitivity matrix (J) and vector (v) product.
+    Compute sensitivity matrix (J) and vector (v) product.
     """
     self.model = m
 
@@ -139,7 +141,7 @@ Sim.Jvec = dask_Jvec
 
 def dask_Jtvec(self, m, v, f=None):
     """
-        Compute adjoint sensitivity matrix (J^T) and vector (v) product.
+    Compute adjoint sensitivity matrix (J^T) and vector (v) product.
     """
     self.model = m
 
@@ -151,5 +153,5 @@ def dask_Jtvec(self, m, v, f=None):
 
     return da.dot(v * self._scale, self.Jmatrix).astype(np.float32)
 
-Sim.Jtvec = dask_Jtvec
 
+Sim.Jtvec = dask_Jtvec

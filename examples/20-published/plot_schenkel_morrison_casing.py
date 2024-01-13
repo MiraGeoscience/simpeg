@@ -35,7 +35,7 @@ equivalent resistor network. The solver used to produce these results
 and achieve the CPU time of ~30s is Mumps, which was installed using
 pymatsolver_
 
-.. _pymatsolver: https://github.com/rowanc1/pymatsolver
+.. _pymatsolver: https://github.com/simpeg/pymatsolver
 
 This example is on figshare:
 https://dx.doi.org/10.6084/m9.figshare.3126961.v1
@@ -105,7 +105,7 @@ def run(plotIt=True):
     nza = 10
     # cell size, number of core cells, number of padding cells in the
     # x-direction
-    ncz, npadzu, npadzd = np.int(np.ceil(np.diff(casing_z)[0] / csz)) + 10, 68, 68
+    ncz, npadzu, npadzd = int(np.ceil(np.diff(casing_z)[0] / csz)) + 10, 68, 68
     # vector of cell widths in the z-direction
     hz = utils.unpack_widths([(csz, npadzd, -1.3), (csz, ncz), (csz, npadzu, 1.3)])
 

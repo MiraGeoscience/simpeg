@@ -39,7 +39,7 @@ def estimate_diagonal(matrix_arg, n, k=None, approach="Probing"):
     and a vector.
 
     For background information on this method, see
-    `Bekas (et al., 2005) <http://www-users.cs.umn.edu/~saad/PDF/umsi-2005-082.pdf>`__
+    `Bekas (et al., 2005) <https://www-users.cs.umn.edu/~saad/PDF/umsi-2005-082.pdf>`__
     and `Selig (et al., 2012) <https://www.cita.utoronto.ca/~niels/diagonal.pdf>`__
 
     Parameters
@@ -299,23 +299,12 @@ def cartesian2amplitude_dip_azimuth(m):
     Convert from cartesian to amplitude, dip (positive down) and
     azimuth (clockwise for North), in degree.
     """
-    m = m.reshape((-1, 3), order='F')
-    atp = cartesian2spherical(m).reshape((-1, 3), order='F')
+    m = m.reshape((-1, 3), order="F")
+    atp = cartesian2spherical(m).reshape((-1, 3), order="F")
     atp[:, 1] = np.rad2deg(-1.0 * atp[:, 1])
     atp[:, 2] = (450.0 - np.rad2deg(atp[:, 2])) % 360.0
 
     return atp
-
-
-def spherical2cartesian(m):
-    """ Convert from spherical to cartesian """
-    m = m.reshape((-1, 3), order='F')
-    a = m[:, 0] + 1e-8
-    t = m[:, 1]
-    p = m[:, 2]
-    m_xyz = np.r_[a * np.cos(t) * np.cos(p), a * np.cos(t) * np.sin(p), a * np.sin(t)]
-
-    return m_xyz
 
 
 def spherical2cartesian(m):
@@ -356,7 +345,7 @@ def spherical2cartesian(m):
         - :math:`p` is the radial angle defined positive CCW from Easting
 
     """
-    m = m.reshape((-1, 3), order='F')
+    m = m.reshape((-1, 3), order="F")
     a = m[:, 0] + 1e-8
     t = m[:, 1]
     p = m[:, 2]
@@ -479,8 +468,12 @@ def define_plane_from_points(xyz1, xyz2, xyz3):
 ################################################
 
 
-diagEst = deprecate_function(estimate_diagonal, "diagEst", removal_version="0.19.0")
-uniqueRows = deprecate_function(unique_rows, "uniqueRows", removal_version="0.19.0")
+diagEst = deprecate_function(
+    estimate_diagonal, "diagEst", removal_version="0.19.0", future_warn=True
+)
+uniqueRows = deprecate_function(
+    unique_rows, "uniqueRows", removal_version="0.19.0", future_warn=True
+)
 sdInv = deprecate_function(sdinv, "sdInv", removal_version="0.19.0", future_warn=True)
 getSubArray = deprecate_function(
     get_subarray, "getSubArray", removal_version="0.19.0", future_warn=True

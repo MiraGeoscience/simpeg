@@ -160,7 +160,9 @@ ind_block = (
 model[ind_block] = block_density
 
 # You can also use SimPEG utilities to add structures to the model more concisely
-ind_sphere = model_builder.getIndicesSphere(np.r_[35.0, 0.0, -40.0], 15.0, mesh.gridCC)
+ind_sphere = model_builder.get_indices_sphere(
+    np.r_[35.0, 0.0, -40.0], 15.0, mesh.gridCC
+)
 ind_sphere = ind_sphere[ind_active]
 model[ind_sphere] = sphere_density
 
@@ -265,6 +267,6 @@ norm = mpl.colors.Normalize(vmin=-v_max, vmax=v_max)
 cbar = mpl.colorbar.ColorbarBase(
     ax4, norm=norm, orientation="vertical", cmap=mpl.cm.bwr
 )
-cbar.set_label("$mgal/m$", rotation=270, labelpad=15, size=12)
+cbar.set_label("Eotvos", rotation=270, labelpad=15, size=12)
 
 plt.show()

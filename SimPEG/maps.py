@@ -1775,7 +1775,7 @@ class SelfConsistentEffectiveMedium(IdentityMap):
         """
 
         if not (np.all(0 <= phi1) and np.all(phi1 <= 1)):
-            warnings.warn("there are phis outside bounds of 0 and 1")
+            warnings.warn("there are phis outside bounds of 0 and 1", stacklevel=2)
             phi1 = np.median(np.c_[phi1 * 0, phi1, phi1 * 0 + 1.0])
 
         phi0 = 1.0 - phi1
@@ -1812,7 +1812,7 @@ class SelfConsistentEffectiveMedium(IdentityMap):
 
             sige1 = sige2
         # TODO: make this a proper warning, and output relevant info (sigma0, sigma1, phi, sigstart, and relerr)
-        warnings.warn("Maximum number of iterations reached")
+        warnings.warn("Maximum number of iterations reached", stacklevel=2)
 
         return sige2
 
@@ -3240,7 +3240,6 @@ class InjectActiveCells(IdentityMap):
         return int(self.indActive.sum())
 
     def _transform(self, m):
-
         if m.ndim > 1:
             return self.P * m + self.valInactive[:, None]
 
@@ -5949,8 +5948,7 @@ class TileMap(IdentityMap):
         local_mesh,
         tol=1e-8,
         components=1,
-        enforce_active=True,
-        **kwargs,
+        enforce_active: bool = True,
     ):
         """
         Parameters
@@ -5982,7 +5980,7 @@ class TileMap(IdentityMap):
 
         self._tol = validate_float("tol", tol, min_val=0.0, inclusive_min=False)
         self._components = validate_integer("components", components, min_val=1)
-        self.enforce_active = enforce_active
+        self.enforce_active: bool = enforce_active
         # trigger creation of P
         self._projection = None
 
@@ -6025,9 +6023,6 @@ class TileMap(IdentityMap):
         -------
         (local_mesh.n_cells) numpy.ndarray of bool
         """
-        if self._local_active is None:
-            getattr(self, "projection")
-
         return self._local_active
 
     @property
@@ -6076,7 +6071,7 @@ class TileMap(IdentityMap):
             if self.enforce_active:
                 self.local_active[
                     self.local_mesh._get_containing_cell_indexes(
-                        self.global_mesh.cell_centers[self.global_active == False, :]
+                        self.global_mesh.cell_centers[~self.global_active, :]
                     )
                 ] = False
             projection = projection[self.local_active, :]
@@ -6085,7 +6080,8 @@ class TileMap(IdentityMap):
                 [
                     sdiag(1.0 / np.sum(projection, axis=1)) * projection
                     for ii in range(self.components)
-                ], format="csr"
+                ],
+                format="csr",
             )
 
         return self._projection

@@ -184,7 +184,7 @@ class PrimSecCasingExample(object):
 
             # cell size, number of core cells, number of padding cells in the
             # x-direction
-            ncz = np.int(np.ceil(np.diff(self.casing_z)[0] / csz)) + 10
+            ncz = int(np.ceil(np.diff(self.casing_z)[0] / csz)) + 10
             npadzu, npadzd = 43, 43
 
             # vector of cell widths in the z-direction
@@ -618,7 +618,7 @@ class PrimSecCasingExample(object):
         fields = sec_problem.fields(m)
         dpred = sec_problem.dpred(m, f=fields)
         t1 = time.time()
-        print(" ...done.   secondary time "), t1 - t0
+        print(f" ...done.   secondary time {t1 - t0}")
 
         return fields, dpred
 

@@ -99,7 +99,9 @@ class InversionDirective:
     def verbose(self, value):
         self._verbose = validate_type("verbose", value, bool)
 
-    debug = deprecate_property(verbose, "debug", "verbose", removal_version="0.19.0")
+    debug = deprecate_property(
+        verbose, "debug", "verbose", removal_version="0.19.0", future_warn=True
+    )
 
     @property
     def inversion(self):
@@ -120,7 +122,8 @@ class InversionDirective:
             warnings.warn(
                 "InversionDirective {0!s} has switched to a new inversion.".format(
                     self.__class__.__name__
-                )
+                ),
+                stacklevel=2,
             )
         self._inversion = i
 
@@ -318,7 +321,10 @@ class DirectiveList(object):
             return
         if getattr(self, "_inversion", None) is not None:
             warnings.warn(
-                "{0!s} has switched to a new inversion.".format(self.__class__.__name__)
+                "{0!s} has switched to a new inversion.".format(
+                    self.__class__.__name__
+                ),
+                stacklevel=2,
             )
         for d in self.dList:
             d.inversion = i
@@ -1316,7 +1322,8 @@ class MultiTargetMisfits(InversionDirective):
             ]
             if smallness[smallness[:, 2] == 1][:, :2].size == 0:
                 warnings.warn(
-                    "There is no PGI regularization. Smallness target is turned off (TriggerSmall flag)"
+                    "There is no PGI regularization. Smallness target is turned off (TriggerSmall flag)",
+                    stacklevel=2,
                 )
                 self.smallness = -1
                 self.pgi_smallness = None
@@ -1359,7 +1366,8 @@ class MultiTargetMisfits(InversionDirective):
             if smallness[smallness[:, 1] == 1][:, :1].size == 0:
                 if self.TriggerSmall:
                     warnings.warn(
-                        "There is no PGI regularization. Smallness target is turned off (TriggerSmall flag)."
+                        "There is no PGI regularization. Smallness target is turned off (TriggerSmall flag).",
+                        stacklevel=2,
                     )
                     self.TriggerSmall = False
                 self.smallness = -1
@@ -1656,8 +1664,6 @@ class SaveModelEveryIteration(SaveEveryIteration):
 class SaveOutputEveryIteration(SaveEveryIteration):
     """SaveOutputEveryIteration"""
 
-    save_txt = True
-
     def __init__(self, save_txt=True, **kwargs):
         super().__init__(**kwargs)
 
@@ -1778,7 +1784,9 @@ class SaveOutputEveryIteration(SaveEveryIteration):
         plot_small=False,
         plot_smooth=False,
     ):
-        self.target_misfit = self.invProb.dmisfit.simulation.survey.nD / 2.0
+        self.target_misfit = (
+            np.sum([dmis.nD for dmis in self.invProb.dmisfit.objfcts]) / 2.0
+        )
         self.i_target = None
 
         if self.invProb.phi_d < self.target_misfit:
@@ -2119,16 +2127,18 @@ class Update_IRLS(InversionDirective):
         if self.mode == 1:
             self.norms = []
             for reg in self.reg.objfcts:
-                if not hasattr(reg, "norms"):
-                    self.norms.append([None])
+                if not isinstance(reg, (Sparse, BaseSparse)):
                     continue
 
                 self.norms.append(reg.norms)
-                reg.norms = [2.0 for obj in reg.objfcts]
+                reg.norms = [2.0 for _ in reg.objfcts]
                 reg.model = self.invProb.model
 
         # Update the model used by the regularization
         for reg in self.reg.objfcts:
+            if not isinstance(reg, Sparse):
+                continue
+
             reg.model = self.invProb.model
 
         if self.sphericalDomain:
@@ -2193,8 +2203,10 @@ class Update_IRLS(InversionDirective):
             # Reset the regularization matrices so that it is
             # recalculated for current model. Do it to all levels of comboObj
             for reg in self.reg.objfcts:
-                if isinstance(reg, (Sparse, BaseSparse)):
-                    reg.update_weights(reg.model)
+                if not isinstance(reg, Sparse):
+                    continue
+
+                reg.update_weights(reg.model)
 
             self.update_beta = True
             self.invProb.phi_m_last = self.reg(self.invProb.model)
@@ -2225,7 +2237,6 @@ class Update_IRLS(InversionDirective):
                 threshold = np.percentile(
                     np.abs(obj.mapping * obj._delta_m(self.invProb.model)), self.prctile
                 )
-
                 if isinstance(obj, SmoothnessFirstOrder):
                     threshold /= reg.regularization_mesh.base_length
 
@@ -2233,8 +2244,9 @@ class Update_IRLS(InversionDirective):
 
         # Re-assign the norms supplied by user l2 -> lp
         for reg, norms in zip(self.reg.objfcts, self.norms):
-            if not hasattr(reg, "norms"):
+            if not isinstance(reg, (Sparse, BaseSparse)):
                 continue
+
             reg.norms = norms
 
             if not self.silent:
@@ -2273,7 +2285,8 @@ class Update_IRLS(InversionDirective):
             warnings.warn(
                 "Without a Linear preconditioner, convergence may be slow. "
                 "Consider adding `Directives.UpdatePreconditioner` to your "
-                "directives list"
+                "directives list",
+                stacklevel=2,
             )
         return True
 
@@ -2565,21 +2578,24 @@ class UpdateSensitivityWeights(InversionDirective):
         if "everyIter" in kwargs.keys():
             warnings.warn(
                 "'everyIter' property is deprecated and will be removed in SimPEG 0.20.0."
-                "Please use 'every_iteration'."
+                "Please use 'every_iteration'.",
+                stacklevel=2,
             )
             every_iteration = kwargs.pop("everyIter")
 
         if "threshold" in kwargs.keys():
             warnings.warn(
                 "'threshold' property is deprecated and will be removed in SimPEG 0.20.0."
-                "Please use 'threshold_value'."
+                "Please use 'threshold_value'.",
+                stacklevel=2,
             )
             threshold_value = kwargs.pop("threshold")
 
         if "normalization" in kwargs.keys():
             warnings.warn(
                 "'normalization' property is deprecated and will be removed in SimPEG 0.20.0."
-                "Please define normalization using 'normalization_method'."
+                "Please define normalization using 'normalization_method'.",
+                stacklevel=2,
             )
             normalization_method = kwargs.pop("normalization")
             if normalization_method is True:
@@ -2695,7 +2711,8 @@ class UpdateSensitivityWeights(InversionDirective):
         elif isinstance(value, bool):
             warnings.warn(
                 "Boolean type for 'normalization_method' is deprecated and will be removed in 0.20.0."
-                "Please use None, 'maximum' or 'minimum'."
+                "Please use None, 'maximum' or 'minimum'.",
+                stacklevel=2,
             )
             if value:
                 self._normalization_method = "maximum"
@@ -2753,10 +2770,19 @@ class UpdateSensitivityWeights(InversionDirective):
         # Compute and sum root-mean squared sensitivities for all objective functions
         wr = np.zeros_like(self.invProb.model)
         for reg in self.reg.objfcts:
-            if not isinstance(reg, BaseSimilarityMeasure):
-                wr += reg.mapping.deriv(self.invProb.model).T * (
-                    (reg.mapping * jtj_diag) / reg.regularization_mesh.vol**2.0
-                )
+            if isinstance(reg, BaseSimilarityMeasure):
+                continue
+
+            mesh = reg.regularization_mesh
+            n_cells = mesh.nC
+            mapped_jtj_diag = reg.mapping * jtj_diag
+            # reshape the mapped, so you can divide by volume
+            # (let's say it was a vector or anisotropic model)
+            mapped_jtj_diag = mapped_jtj_diag.reshape((n_cells, -1), order="F")
+            wr_temp = mapped_jtj_diag / reg.regularization_mesh.vol[:, None] ** 2.0
+            wr_temp = wr_temp.reshape(-1, order="F")
+
+            wr += reg.mapping.deriv(self.invProb.model).T * wr_temp
 
         wr **= 0.5
 
@@ -2822,7 +2848,7 @@ class UpdateSensitivityWeights(InversionDirective):
 
 
 class ProjectSphericalBounds(InversionDirective):
-    """
+    r"""
     Trick for spherical coordinate system.
     Project \theta and \phi angles back to [-\pi,\pi] using
     back and forth conversion.
@@ -2845,8 +2871,6 @@ class ProjectSphericalBounds(InversionDirective):
                 misfit.simulation.model = m
 
     def endIter(self):
-        x = self.invProb.model
-
         for misfit in self.dmisfit.objfcts:
             if (
                 hasattr(misfit.simulation, "model_type")
@@ -3190,7 +3214,7 @@ class VectorInversion(InversionDirective):
 
         for dmisfit in self.dmisfit.objfcts:
             if getattr(dmisfit.simulation, "coordinate_system", None) is not None:
-                simulation.coordinate_system = self.mode
+                dmisfit.simulation.coordinate_system = self.mode
 
     def endIter(self):
         if (
