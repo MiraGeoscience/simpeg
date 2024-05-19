@@ -2141,6 +2141,7 @@ class Update_IRLS(InversionDirective):
             self.angleScale()
 
         # Check if misfit is within the tolerance, otherwise scale beta
+        ratio = 1.0
         if np.all(
             [
                 np.abs(1.0 - self.invProb.phi_d / self.target) > self.beta_tol,
@@ -2155,19 +2156,18 @@ class Update_IRLS(InversionDirective):
             else:
                 ratio = np.mean([0.75, ratio])
 
-            self.invProb.beta = self.invProb.beta * ratio
-
-            if np.all([self.mode != 1, self.beta_search]):
-                print("Beta search step")
-                # self.update_beta = False
-                # Re-use previous model and continue with new beta
-                self.invProb.model = self.reg.objfcts[0].model
-                self.opt.xc = self.reg.objfcts[0].model
-                self.opt.iter -= 1
-                return
-
         elif np.all([self.mode == 1, self.opt.iter % self.coolingRate == 0]):
-            self.invProb.beta = self.invProb.beta / self.coolingFactor
+            ratio = 1.0 / self.coolingFactor
+
+        self.invProb.beta = self.invProb.beta * ratio
+
+        for (mult, objfct), pred in zip(self.invProb.dmisfit, self.invProb.dpred):
+            residual = objfct.W * (objfct.data.dobs - pred)
+            phi_d = 0.5 * mult * np.vdot(residual, residual)
+            target = objfct.nD * 0.5 * self.chifact_target
+
+            if phi_d < target:
+                mult += 1.0 / ratio
 
         # After reaching target misfit with l2-norm, switch to IRLS (mode:2)
         if np.all([self.invProb.phi_d < self.start, self.mode == 1]):
