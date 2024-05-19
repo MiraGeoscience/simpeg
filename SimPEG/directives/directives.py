@@ -2167,7 +2167,7 @@ class Update_IRLS(InversionDirective):
             target = objfct.nD * 0.5 * self.chifact_target
 
             if phi_d < target:
-                mult += 1.0 / ratio
+                mult *= ratio
             multipliers.append(mult)
 
         self.invProb.dmisfit.multipliers = multipliers
