@@ -2160,7 +2160,7 @@ class Update_IRLS(InversionDirective):
             ratio = 1.0 / self.coolingFactor
 
         self.invProb.beta = self.invProb.beta * ratio
-
+        multipliers = []
         for (mult, objfct), pred in zip(self.invProb.dmisfit, self.invProb.dpred):
             residual = objfct.W * (objfct.data.dobs - pred)
             phi_d = 0.5 * mult * np.vdot(residual, residual)
@@ -2168,6 +2168,10 @@ class Update_IRLS(InversionDirective):
 
             if phi_d < target:
                 mult += 1.0 / ratio
+            multipliers.append(mult)
+
+        self.invProb.dmisfit.multipliers = multipliers
+        print(self.invProb.dmisfit.multipliers)
 
         # After reaching target misfit with l2-norm, switch to IRLS (mode:2)
         if np.all([self.invProb.phi_d < self.start, self.mode == 1]):
