@@ -287,7 +287,8 @@ class CrossGradient(BaseSimilarityMeasure):
         g_m2 = G @ m2
 
         return (
-            2
+            self.wire_map.deriv(model).T
+            * 2
             * np.r_[
                 (((Av @ g_m2**2) @ Av) * g_m1) @ G
                 - (((Av @ (g_m1 * g_m2)) @ Av) * g_m2) @ G,
@@ -365,8 +366,11 @@ class CrossGradient(BaseSimilarityMeasure):
             D12 = G.T @ D12_mid @ G
             D22 = G.T @ D22_mid @ G
 
-            return 2 * sp.bmat(
-                [[D11, D12], [D12.T, D22]], format="csr"
+            return (
+                2
+                * self.wire_map.deriv(model).T
+                * sp.bmat([[D11, D12], [D12.T, D22]], format="csr")
+                * self.wire_map.deriv(model)
             )  # factor of 2 from derviative of | grad m1 x grad m2 | ^2
 
         else:
@@ -389,5 +393,5 @@ class CrossGradient(BaseSimilarityMeasure):
                     - g_m1 * (Av.T @ (Av @ (g_m2 * Gv1)))  # d12.T*v1 fcontinued
                 )
             return (
-                2 * np.r_[p1, p2]
+                2 * self.wire_map.deriv(model).T * np.r_[p1, p2]
             )  # factor of 2 from derviative of | grad m1 x grad m2 | ^2
