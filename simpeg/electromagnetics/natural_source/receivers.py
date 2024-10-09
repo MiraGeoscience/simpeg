@@ -555,11 +555,12 @@ class Point3DTipper(PointNaturalSource):
             else:
                 ghx_v += gh_v
 
-            gh_v = (
-                Phx.T @ sp.csr_matrix(ghx_v)
-                + Phy.T @ sp.csr_matrix(ghy_v)
-                + Phz.T @ sp.csr_matrix(ghz_v)
+            gh_v = sp.csr_matrix(
+                Phx.T @ ghx_v
+                + Phy.T @ ghy_v
+                + Phz.T @ ghz_v
             )
+
             return f._hDeriv(src, None, gh_v, adjoint=True)
 
         dh_v = f._hDeriv(src, du_dm_v, v, adjoint=False)
