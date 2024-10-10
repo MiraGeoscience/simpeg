@@ -201,7 +201,7 @@ def compute_J(self, f=None):
 
     compute_row_size = np.ceil(self.max_chunk_size / (A_i.A.shape[0] * 32.0 * 1e-6))
     blocks = get_parallel_blocks(
-        self.survey.source_list, compute_row_size, optimize=False
+        self.survey.source_list, compute_row_size, optimize=True
     )
     fields_array = delayed(f[:, self._solutionType])
     fields = delayed(f)
