@@ -75,16 +75,16 @@ def _eval_impedance_deriv(self, src, mesh, f, du_dm_v=None, v=None, adjoint=Fals
         gbot_v = sdiag(-imp / bot) @ v
 
         if mesh.dim == 3:
-            diag_blocks = gbot_v @ np.c_[hy[:, 1], -hy[:, 0]]
+            diag_blocks = gbot_v.T @ np.c_[hy[:, 1], -hy[:, 0]]
             ghx_v = sp.block_diag(diag_blocks.tolist(), format="csr")
 
-            diag_blocks = gbot_v @ np.c_[-hx[:, 1], hx[:, 0]]
+            diag_blocks = gbot_v.T @ np.c_[-hx[:, 1], hx[:, 0]]
             ghy_v = sp.block_diag(diag_blocks.tolist(), format="csr")
 
-            diag_blocks = gtop_v @ np.c_[h[:, 1], -h[:, 0]]
+            diag_blocks = gbot_v.T @ np.c_[h[:, 1], -h[:, 0]]
             ge_v = sp.block_diag(diag_blocks.tolist(), format="csr")
 
-            diag_blocks = gtop_v @ np.c_[-e[:, 1], e[:, 0]]
+            diag_blocks = gbot_v.T @ np.c_[-e[:, 1], e[:, 0]]
             gh_v = sp.block_diag(diag_blocks.tolist(), format="csr")
 
             if self.orientation[1] == "x":
@@ -185,16 +185,16 @@ def _eval_tipper_deriv(self, src, mesh, f, du_dm_v=None, v=None, adjoint=False):
         gtop_v = sdiag(bot**-1) @ v
         gbot_v = sdiag(-imp / bot) @ v
 
-        diag_blocks = gbot_v @ np.c_[hy[:, 1], -hy[:, 0]]
+        diag_blocks = gbot_v.T @ np.c_[hy[:, 1], -hy[:, 0]]
         ghx_v = sp.block_diag(diag_blocks.tolist(), format="csr")
 
-        diag_blocks = gbot_v @ np.c_[-hx[:, 1], hx[:, 0]]
+        diag_blocks = gbot_v.T @ np.c_[-hx[:, 1], hx[:, 0]]
         ghy_v = sp.block_diag(diag_blocks.tolist(), format="csr")
 
-        diag_blocks = gtop_v @ np.c_[-h[:, 1], h[:, 0]]
+        diag_blocks = gtop_v.T @ np.c_[-h[:, 1], h[:, 0]]
         ghz_v = sp.block_diag(diag_blocks.tolist(), format="csr")
 
-        diag_blocks = gtop_v @ np.c_[hz[:, 1], -hz[:, 0]]
+        diag_blocks = gtop_v.T @ np.c_[hz[:, 1], -hz[:, 0]]
         gh_v = sp.block_diag(diag_blocks.tolist(), format="csr")
 
         if self.orientation[1] == "x":
