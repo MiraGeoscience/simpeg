@@ -223,9 +223,8 @@ def compute_J(self, f=None):
     #     with performance_report(filename="dask-report.html"):
 
     # Dask process for all derivatives
-    tc = time()
     blocks_receiver_derivs = compute(blocks_receiver_derivs)[0]
-    print(f"Time to compute all derivatives: {time() - tc}")
+
     for block_derivs_chunks, addresses_chunks in tqdm(
         zip(blocks_receiver_derivs, blocks),
         ncols=len(blocks_receiver_derivs),
@@ -301,7 +300,6 @@ def receiver_derivs(survey, mesh, fields, blocks):
 
         if isinstance(source, PlanewaveXYPrimary):
             v = sdiag(np.ones(receiver.nD))
-            # v = np.eye(receiver.nD, dtype=float)
         else:
             v = sp.csr_matrix(np.ones(receiver.nD), dtype=float)
 
