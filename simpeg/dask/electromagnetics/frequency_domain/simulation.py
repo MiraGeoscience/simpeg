@@ -297,13 +297,7 @@ def receiver_derivs(survey, mesh, fields, blocks):
     for address in blocks:
         source = survey.source_list[address[0][0]]
         receiver = source.receiver_list[address[0][1]]
-
-        if isinstance(source, PlanewaveXYPrimary):
-            v = sdiag(np.ones(receiver.nD))
-        else:
-            v = sp.csr_matrix(np.ones(receiver.nD), dtype=float)
-
-        # Assume the derivatives in terms of model are Zero (seems to always be case)
+        v = sdiag(np.ones(receiver.nD))
         dfduT, _ = receiver.evalDeriv(
             source, mesh, fields, v=v[:, address[1][0]], adjoint=True
         )

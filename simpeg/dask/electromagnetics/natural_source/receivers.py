@@ -75,17 +75,21 @@ def _eval_impedance_deriv(self, src, mesh, f, du_dm_v=None, v=None, adjoint=Fals
         gbot_v = sdiag(-imp / bot) @ v
 
         if mesh.dim == 3:
-            diag_blocks = gbot_v.T @ np.c_[hy[:, 1], -hy[:, 0]]
-            ghx_v = sp.block_diag(diag_blocks.tolist(), format="csr")
+            block_a = sp.kron(sdiag(hy[:, 1]) @ gbot_v, [1, 0])
+            block_b = sp.kron(sdiag(-hy[:, 0]) @ gbot_v, [0, 1])
+            ghx_v = block_a + block_b
 
-            diag_blocks = gbot_v.T @ np.c_[-hx[:, 1], hx[:, 0]]
-            ghy_v = sp.block_diag(diag_blocks.tolist(), format="csr")
+            block_a = sp.kron(sdiag(-hx[:, 1]) @ gbot_v, [1, 0])
+            block_b = sp.kron(sdiag(hx[:, 0]) @ gbot_v, [0, 1])
+            ghy_v = block_a + block_b
 
-            diag_blocks = gbot_v.T @ np.c_[h[:, 1], -h[:, 0]]
-            ge_v = sp.block_diag(diag_blocks.tolist(), format="csr")
+            block_a = sp.kron(sdiag(h[:, 1]) @ gtop_v, [1, 0])
+            block_b = sp.kron(sdiag(-h[:, 0]) @ gtop_v, [0, 1])
+            ge_v = block_a + block_b
 
-            diag_blocks = gbot_v.T @ np.c_[-e[:, 1], e[:, 0]]
-            gh_v = sp.block_diag(diag_blocks.tolist(), format="csr")
+            block_a = sp.kron(sdiag(-e[:, 1]) @ gtop_v, [1, 0])
+            block_b = sp.kron(sdiag(e[:, 0]) @ gtop_v, [0, 1])
+            gh_v = block_a + block_b
 
             if self.orientation[1] == "x":
                 ghy_v += gh_v
@@ -185,17 +189,21 @@ def _eval_tipper_deriv(self, src, mesh, f, du_dm_v=None, v=None, adjoint=False):
         gtop_v = sdiag(bot**-1) @ v
         gbot_v = sdiag(-imp / bot) @ v
 
-        diag_blocks = gbot_v.T @ np.c_[hy[:, 1], -hy[:, 0]]
-        ghx_v = sp.block_diag(diag_blocks.tolist(), format="csr")
+        block_a = sp.kron(sdiag(hy[:, 1]) @ gbot_v, [1, 0])
+        block_b = sp.kron(sdiag(-hy[:, 0]) @ gbot_v, [0, 1])
+        ghx_v = block_a + block_b
 
-        diag_blocks = gbot_v.T @ np.c_[-hx[:, 1], hx[:, 0]]
-        ghy_v = sp.block_diag(diag_blocks.tolist(), format="csr")
+        block_a = sp.kron(sdiag(-hx[:, 1]) @ gbot_v, [1, 0])
+        block_b = sp.kron(sdiag(hx[:, 0]) @ gbot_v, [0, 1])
+        ghy_v = block_a + block_b
 
-        diag_blocks = gtop_v.T @ np.c_[-h[:, 1], h[:, 0]]
-        ghz_v = sp.block_diag(diag_blocks.tolist(), format="csr")
+        block_a = sp.kron(sdiag(-h[:, 1]) @ gtop_v, [1, 0])
+        block_b = sp.kron(sdiag(h[:, 0]) @ gtop_v, [0, 1])
+        ghz_v = block_a + block_b
 
-        diag_blocks = gtop_v.T @ np.c_[hz[:, 1], -hz[:, 0]]
-        gh_v = sp.block_diag(diag_blocks.tolist(), format="csr")
+        block_a = sp.kron(sdiag(hz[:, 1]) @ gtop_v, [1, 0])
+        block_b = sp.kron(sdiag(-hz[:, 0]) @ gtop_v, [0, 1])
+        gh_v = block_a + block_b
 
         if self.orientation[1] == "x":
             ghy_v -= gh_v
