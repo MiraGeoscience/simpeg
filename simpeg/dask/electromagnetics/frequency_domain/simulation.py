@@ -210,14 +210,20 @@ def compute_J(self, f=None):
     blocks_receiver_derivs = []
 
     for block in blocks:
-        blocks_receiver_derivs.append(
-            receiver_derivs(
-                survey,
-                mesh,
-                fields,
-                block,
+        if len(block) == 0:
+            continue
+
+        sub_blocks = []
+        for address in block:
+            sub_blocks.append(
+                receiver_derivs(
+                    survey,
+                    mesh,
+                    fields,
+                    address,
+                )
             )
-        )
+        blocks_receiver_derivs.append(sub_blocks)
 
     # with Client(processes=False) as client:
     #     with performance_report(filename="dask-report.html"):
@@ -292,18 +298,15 @@ def parallel_block_compute(
 
 
 @delayed
-def receiver_derivs(survey, mesh, fields, blocks):
-    field_derivatives = []
-    for address in blocks:
-        source = survey.source_list[address[0][0]]
-        receiver = source.receiver_list[address[0][1]]
-        v = sdiag(np.ones(receiver.nD))
-        dfduT, _ = receiver.evalDeriv(
-            source, mesh, fields, v=v[:, address[1][0]], adjoint=True
-        )
-        field_derivatives.append(dfduT)
+def receiver_derivs(survey, mesh, fields, address):
+    source = survey.source_list[address[0][0]]
+    receiver = source.receiver_list[address[0][1]]
+    v = sdiag(np.ones(receiver.nD))
+    dfduT, _ = receiver.evalDeriv(
+        source, mesh, fields, v=v[:, address[1][0]], adjoint=True
+    )
 
-    return field_derivatives
+    return dfduT
 
 
 @delayed
