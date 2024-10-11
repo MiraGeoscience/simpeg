@@ -5,10 +5,11 @@ import scipy.sparse as sp
 from multiprocessing import cpu_count
 from dask import array, compute, delayed
 from simpeg.utils import sdiag
+from time import time
 
 # from dask.distributed import get_client, Client, performance_report
 from simpeg.dask.simulation import dask_Jvec, dask_Jtvec, dask_getJtJdiag
-from simpeg.dask.utils import get_parallel_blocks
+from simpeg.dask.utils import get_block_survey
 from simpeg.electromagnetics.natural_source.sources import PlanewaveXYPrimary
 import zarr
 from tqdm import tqdm
@@ -200,40 +201,52 @@ def compute_J(self, f=None):
         Jmatrix = np.zeros((self.survey.nD, m_size), dtype=np.float32)
 
     compute_row_size = np.ceil(self.max_chunk_size / (A_i.A.shape[0] * 32.0 * 1e-6))
-    blocks = get_parallel_blocks(
-        self.survey.source_list, compute_row_size, optimize=True
-    )
+
+    if getattr(self, "source_list_blocks", None) is None:
+        self.source_list_blocks, self.addresses = get_block_survey(
+            self.survey.source_list, compute_row_size, optimize=True
+        )
+
     fields_array = delayed(f[:, self._solutionType])
     fields = delayed(f)
-    survey = delayed(self.survey)
+
     mesh = delayed(self.mesh)
-    blocks_receiver_derivs = []
 
-    for block in blocks:
-        if len(block) == 0:
-            continue
+    parallel_blocks = []
 
-        sub_blocks = []
-        for address in block:
-            sub_blocks.append(
+    for block in self.source_list_blocks:
+        deriv_blocks = []
+        for source in block:
+            deriv_blocks.append(
                 receiver_derivs(
-                    survey,
+                    source,
+                    source.receiver_list[0],  # Always a list of one
                     mesh,
                     fields,
-                    address,
+                    # address,
                 )
             )
-        blocks_receiver_derivs.append(sub_blocks)
+
+        parallel_blocks.append(deriv_blocks)
 
     # with Client(processes=False) as client:
     #     with performance_report(filename="dask-report.html"):
 
     # Dask process for all derivatives
-    blocks_receiver_derivs = compute(blocks_receiver_derivs)[0]
+    # blocks_receiver_derivs = []
+    tc = time()
+    parallel_blocks = compute(parallel_blocks)[0]
+    print("Time to compute receiver derivatives", time() - tc)
+    # for address in blocks:
+    #     sub_blocks = []
+    #     for block in address:
+    #         sub_blocks.append(source_blocks[block[0]][block[1]][:, block[2]])
+    #     blocks_receiver_derivs.append(sub_blocks)
+    #
 
     for block_derivs_chunks, addresses_chunks in tqdm(
-        zip(blocks_receiver_derivs, blocks),
-        ncols=len(blocks_receiver_derivs),
+        zip(parallel_blocks, self.addresses),
+        ncols=len(parallel_blocks),
         desc=f"Sensitivities at {list(self.Ainv)[0]} Hz",
     ):
         Jmatrix = parallel_block_compute(
@@ -298,13 +311,10 @@ def parallel_block_compute(
 
 
 @delayed
-def receiver_derivs(survey, mesh, fields, address):
-    source = survey.source_list[address[0][0]]
-    receiver = source.receiver_list[address[0][1]]
+def receiver_derivs(source, receiver, mesh, fields):
+
     v = sdiag(np.ones(receiver.nD))
-    dfduT, _ = receiver.evalDeriv(
-        source, mesh, fields, v=v[:, address[1][0]], adjoint=True
-    )
+    dfduT, _ = receiver.evalDeriv(source, mesh, fields, v=v, adjoint=True)
 
     return dfduT
 

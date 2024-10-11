@@ -1,4 +1,5 @@
 import numpy as np
+from copy import deepcopy
 from dask.distributed import get_client
 from multiprocessing import cpu_count
 
@@ -38,6 +39,56 @@ def compute(self, job):
         return client.compute(job, workers=self.workers)
     except ValueError:
         return job.compute()
+
+
+def get_block_survey(
+    source_list: list, data_block_size, optimize=True
+) -> tuple[list, list]:
+    row_count = 0
+    row_index = 0
+    block_count = 0
+    blocks = [[]]
+    parallel_blocks_list = [[]]
+    for s_id, src in enumerate(source_list):
+        for r_id, rx in enumerate(src.receiver_list):
+            indices = np.arange(rx.nD).astype(int)
+            chunks = np.array_split(
+                indices, int(np.ceil(len(indices) / data_block_size))
+            )
+
+            for ind, chunk in enumerate(chunks):
+                chunk_size = len(chunk)
+                new_receiver = type(rx)(
+                    locations=rx.locations[chunk, :],
+                    orientation=rx.orientation,
+                    component=rx.component,
+                    storeProjections=rx.storeProjections,
+                )
+                new_source = deepcopy(src)
+                new_source.receiver_list = [new_receiver]
+
+                # Condition to start a new block
+                if (row_count + chunk_size) > (data_block_size * cpu_count()):
+                    row_count = 0
+                    block_count += 1
+                    blocks.append([])
+                    parallel_blocks_list.append([])
+
+                parallel_blocks_list[block_count].append(new_source)
+                blocks[block_count].append(
+                    (
+                        (s_id, r_id, ind),
+                        (
+                            chunk,
+                            np.arange(row_index, row_index + chunk_size).astype(int),
+                            rx.locations.shape[0],
+                        ),
+                    )
+                )
+                row_index += chunk_size
+                row_count += chunk_size
+
+    return parallel_blocks_list, blocks
 
 
 def get_parallel_blocks(source_list: list, data_block_size, optimize=True) -> list:
