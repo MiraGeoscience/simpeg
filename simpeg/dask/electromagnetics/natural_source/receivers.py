@@ -7,7 +7,7 @@ from simpeg.electromagnetics.natural_source.receivers import (
 from simpeg.utils import sdiag
 
 
-def _eval_impedance_deriv(self, src, mesh, e, h, simulation, du_dm_v=None, v=None, adjoint=False):
+def _eval_impedance_deriv(self, frequency, mesh, e, h, simulation, du_dm_v=None, v=None, adjoint=False):
     if mesh.dim < 3 and self.orientation in ["xx", "yy"]:
         if adjoint:
             return 0 * v
@@ -105,7 +105,7 @@ def _eval_impedance_deriv(self, src, mesh, e, h, simulation, du_dm_v=None, v=Non
             gh_v = PH.T @ gbot_v
             ge_v = PE.T @ gtop_v
 
-        gfu_h_v = -1.0 / (1j * 2 * np.pi * src.frequency) * (mesh.edge_curl.T * (simulation.MfMui.T * (simulation.MfI.T * gh_v)))
+        gfu_h_v = -1.0 / (1j * 2 * np.pi * frequency) * (mesh.edge_curl.T * (simulation.MfMui.T * (simulation.MfI.T * gh_v)))
 
         return gfu_h_v + ge_v, None
 
@@ -159,7 +159,7 @@ def _eval_impedance_deriv(self, src, mesh, e, h, simulation, du_dm_v=None, v=Non
 PointNaturalSource._eval_impedance_deriv = _eval_impedance_deriv
 
 
-def _eval_tipper_deriv(self, src, mesh, h, simulation, du_dm_v=None, v=None, adjoint=False):
+def _eval_tipper_deriv(self, frequency, mesh, h, simulation, du_dm_v=None, v=None, adjoint=False):
     # will grab both primary and secondary and sum them!
 
     # if not isinstance(f, np.ndarray):
@@ -211,7 +211,7 @@ def _eval_tipper_deriv(self, src, mesh, h, simulation, du_dm_v=None, v=None, adj
 
         gh_v = Phx.T @ ghx_v + Phy.T @ ghy_v + Phz.T @ ghz_v
 
-        gfu_h_v = -1.0 / (1j * 2 * np.pi * src.frequency) * (
+        gfu_h_v = -1.0 / (1j * 2 * np.pi * frequency) * (
                     mesh.edge_curl.T * (simulation.MfMui.T * (simulation.MfI.T * gh_v)))
 
         return gfu_h_v

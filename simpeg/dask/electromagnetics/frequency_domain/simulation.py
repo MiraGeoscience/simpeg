@@ -212,7 +212,7 @@ def compute_J(self, f=None):
         )
 
     fields_array = delayed(f[:, self._solutionType])
-    # fields = delayed(f)
+    fields = delayed(f)
 
     e = delayed(f[self.survey.source_list[0], "e"])
     h = delayed(f[self.survey.source_list[0], "h"])
@@ -225,7 +225,7 @@ def compute_J(self, f=None):
         for source in block:
             deriv_blocks.append(
                 receiver_derivs(
-                    source,
+                    source.frequency,
                     source.receiver_list[0],  # Always a list of one
                     mesh,
                     e,
@@ -313,15 +313,15 @@ def parallel_block_compute(
 
 
 @delayed
-def receiver_derivs(source, receiver, mesh, e, h, simulation):
+def receiver_derivs(frequency, receiver, mesh, e, h, simulation):
     v = sdiag(np.ones(receiver.nD))
 
     if isinstance(receiver, Point3DTipper):
         if receiver.component == "imag":
             v = -1j * v
-        dfduT = receiver._eval_tipper_deriv(source, mesh, h, simulation, v=v, adjoint=True)
+        dfduT = receiver._eval_tipper_deriv(frequency, mesh, h, simulation, v=v, adjoint=True)
     elif isinstance(receiver, PointNaturalSource):
-        dfduT, _ = receiver._eval_impedance_deriv(source, mesh, e, h, simulation, v=v, adjoint=True)
+        dfduT, _ = receiver._eval_impedance_deriv(frequency, mesh, e, h, simulation, v=v, adjoint=True)
 
     return dfduT
 
