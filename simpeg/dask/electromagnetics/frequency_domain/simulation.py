@@ -224,13 +224,17 @@ def compute_J(self, f=None):
         deriv_blocks = []
         for source in block:
             deriv_blocks.append(
-                receiver_derivs(
-                    source.frequency,
-                    source.receiver_list[0],  # Always a list of one
-                    mesh,
-                    e,
-                    h,
-                    self,
+                array.from_delayed(
+                    receiver_derivs(
+                        source.frequency,
+                        source.receiver_list[0],  # Always a list of one
+                        mesh,
+                        e,
+                        h,
+                        self,
+                    ),
+                    dtype=np.complex128,
+                    shape=(A_i.A.shape[0], source.receiver_list[0].nD * 2),
                 )
             )
 
@@ -241,10 +245,10 @@ def compute_J(self, f=None):
 
     # Dask process for all derivatives
     # blocks_receiver_derivs = []
-    tc = time()
-    print("Computing receiver derivatives")
-    parallel_blocks = compute(parallel_blocks)[0]
-    print("Runtime:", time() - tc)
+    # tc = time()
+    # print("Computing receiver derivatives")
+    # parallel_blocks = compute(parallel_blocks)[0]
+    # print("Runtime:", time() - tc)
 
     for block_derivs_chunks, addresses_chunks in tqdm(
         zip(parallel_blocks, self.addresses),
@@ -272,7 +276,10 @@ def parallel_block_compute(
     self, Jmatrix, blocks_receiver_derivs, A_i, fields_array, addresses
 ):
     m_size = self.model.size
-    block_stack = sp.hstack(blocks_receiver_derivs).toarray()
+    print("Computing block")
+    tc = time()
+    block_stack = array.hstack(blocks_receiver_derivs).compute().toarray()
+    print("Runtime:", time() - tc)
     ATinvdf_duT = delayed(A_i * block_stack)
     count = 0
     rows = []
