@@ -7,14 +7,14 @@ from simpeg.electromagnetics.natural_source.receivers import (
 from simpeg.utils import sdiag
 
 
-def _eval_impedance_deriv(self, src, mesh, f, du_dm_v=None, v=None, adjoint=False):
+def _eval_impedance_deriv(self, src, mesh, e, h, simulation, du_dm_v=None, v=None, adjoint=False):
     if mesh.dim < 3 and self.orientation in ["xx", "yy"]:
         if adjoint:
             return 0 * v
         else:
             return 0 * du_dm_v
-    e = f[src, "e"]
-    h = f[src, "h"]
+    # e = f[src, "e"]
+    # h = f[src, "h"]
     if mesh.dim == 3:
         if self.orientation[0] == "x":
             Pe = self.getP(mesh, "Ex", "e")
@@ -105,10 +105,9 @@ def _eval_impedance_deriv(self, src, mesh, f, du_dm_v=None, v=None, adjoint=Fals
             gh_v = PH.T @ gbot_v
             ge_v = PE.T @ gtop_v
 
-        gfu_h_v, gfm_h_v = f._hDeriv(src, None, gh_v, adjoint=True)
-        gfu_e_v, gfm_e_v = f._eDeriv(src, None, ge_v, adjoint=True)
+        gfu_h_v = -1.0 / (1j * 2 * np.pi * src.frequency) * (mesh.edge_curl.T * (simulation.MfMui.T * (simulation.MfI.T * gh_v)))
 
-        return gfu_h_v + gfu_e_v, gfm_h_v + gfm_e_v
+        return gfu_h_v + ge_v, None
 
     if mesh.dim == 3:
         de_v = Pe @ f._eDeriv(src, du_dm_v, v, adjoint=False)
@@ -160,13 +159,13 @@ def _eval_impedance_deriv(self, src, mesh, f, du_dm_v=None, v=None, adjoint=Fals
 PointNaturalSource._eval_impedance_deriv = _eval_impedance_deriv
 
 
-def _eval_tipper_deriv(self, src, mesh, f, du_dm_v=None, v=None, adjoint=False):
+def _eval_tipper_deriv(self, src, mesh, h, simulation, du_dm_v=None, v=None, adjoint=False):
     # will grab both primary and secondary and sum them!
 
-    if not isinstance(f, np.ndarray):
-        h = f[src, "h"]
-    else:
-        h = f
+    # if not isinstance(f, np.ndarray):
+    #     h = f[src, "h"]
+    # else:
+    #     h = f
 
     Phx = self.getP(mesh, "Fx", "h")
     Phy = self.getP(mesh, "Fy", "h")
@@ -212,7 +211,10 @@ def _eval_tipper_deriv(self, src, mesh, f, du_dm_v=None, v=None, adjoint=False):
 
         gh_v = Phx.T @ ghx_v + Phy.T @ ghy_v + Phz.T @ ghz_v
 
-        return f._hDeriv(src, None, gh_v, adjoint=True)
+        gfu_h_v = -1.0 / (1j * 2 * np.pi * src.frequency) * (
+                    mesh.edge_curl.T * (simulation.MfMui.T * (simulation.MfI.T * gh_v)))
+
+        return gfu_h_v
 
     dh_v = f._hDeriv(src, du_dm_v, v, adjoint=False)
     dhx_v = Phx @ dh_v

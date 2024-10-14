@@ -11,6 +11,10 @@ from time import time
 from simpeg.dask.simulation import dask_Jvec, dask_Jtvec, dask_getJtJdiag
 from simpeg.dask.utils import get_block_survey
 from simpeg.electromagnetics.natural_source.sources import PlanewaveXYPrimary
+from simpeg.electromagnetics.natural_source.receivers import (
+    PointNaturalSource,
+    Point3DTipper,
+)
 import zarr
 from tqdm import tqdm
 
@@ -208,8 +212,10 @@ def compute_J(self, f=None):
         )
 
     fields_array = delayed(f[:, self._solutionType])
-    fields = delayed(f)
+    # fields = delayed(f)
 
+    e = delayed(f[self.survey.source_list[0], "e"])
+    h = delayed(f[self.survey.source_list[0], "h"])
     mesh = delayed(self.mesh)
 
     parallel_blocks = []
@@ -222,8 +228,9 @@ def compute_J(self, f=None):
                     source,
                     source.receiver_list[0],  # Always a list of one
                     mesh,
-                    fields,
-                    # address,
+                    e,
+                    h,
+                    self,
                 )
             )
 
@@ -235,14 +242,9 @@ def compute_J(self, f=None):
     # Dask process for all derivatives
     # blocks_receiver_derivs = []
     tc = time()
+    print("Computing receiver derivatives")
     parallel_blocks = compute(parallel_blocks)[0]
-    print("Time to compute receiver derivatives", time() - tc)
-    # for address in blocks:
-    #     sub_blocks = []
-    #     for block in address:
-    #         sub_blocks.append(source_blocks[block[0]][block[1]][:, block[2]])
-    #     blocks_receiver_derivs.append(sub_blocks)
-    #
+    print("Runtime:", time() - tc)
 
     for block_derivs_chunks, addresses_chunks in tqdm(
         zip(parallel_blocks, self.addresses),
@@ -311,10 +313,15 @@ def parallel_block_compute(
 
 
 @delayed
-def receiver_derivs(source, receiver, mesh, fields):
-
+def receiver_derivs(source, receiver, mesh, e, h, simulation):
     v = sdiag(np.ones(receiver.nD))
-    dfduT, _ = receiver.evalDeriv(source, mesh, fields, v=v, adjoint=True)
+
+    if isinstance(receiver, Point3DTipper):
+        if receiver.component == "imag":
+            v = -1j * v
+        dfduT = receiver._eval_tipper_deriv(source, mesh, h, simulation, v=v, adjoint=True)
+    elif isinstance(receiver, PointNaturalSource):
+        dfduT, _ = receiver._eval_impedance_deriv(source, mesh, e, h, simulation, v=v, adjoint=True)
 
     return dfduT
 
