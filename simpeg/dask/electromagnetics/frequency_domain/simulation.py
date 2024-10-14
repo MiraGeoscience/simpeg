@@ -222,12 +222,8 @@ def compute_J(self, f=None):
     #     with performance_report(filename="dask-report.html"):
 
     # Dask process for all derivatives
-    print("Computing field derivatives...")
-    from time import time
-    tc = time()
     blocks_receiver_derivs = compute(blocks_receiver_derivs)[0]
-    print(f"Time to compute field derivatives: {time() - tc}")
-    
+
     for block_derivs_chunks, addresses_chunks in tqdm(
         zip(blocks_receiver_derivs, blocks),
         ncols=len(blocks_receiver_derivs),
