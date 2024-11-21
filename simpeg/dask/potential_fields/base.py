@@ -1,7 +1,7 @@
 import numpy as np
 from ...potential_fields.base import BasePFSimulation as Sim
 import os
-from dask import delayed, array
+from dask import delayed, array, config
 from dask.diagnostics import ProgressBar
 from ..utils import compute_chunk_sizes
 
