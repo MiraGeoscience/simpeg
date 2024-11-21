@@ -1,6 +1,7 @@
 import numpy as np
 from ....potential_fields.gravity import Simulation3DIntegral as Sim
 from ....utils import sdiag, mkvc
+from dask import array
 
 
 def dask_getJtJdiag(self, m, W=None, f=None):
@@ -9,13 +10,17 @@ def dask_getJtJdiag(self, m, W=None, f=None):
     """
 
     self.model = m
-
-    if W is None:
-        W = np.ones(self.nD)
-    else:
-        W = W.diagonal()
     if getattr(self, "_gtg_diagonal", None) is None:
-        diag = ((W[:, None] * self.Jmatrix) ** 2).sum(axis=0).compute()
+        if W is None:
+            W = np.ones(self.nD)
+        else:
+            W = W.diagonal()
+
+        diag = array.einsum("i,ij,ij->j", W, self.Jmatrix, self.Jmatrix)
+
+        if isinstance(diag, array.Array):
+            diag = np.asarray(diag.compute())
+
         self._gtg_diagonal = diag
     else:
         diag = self._gtg_diagonal

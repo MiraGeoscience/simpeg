@@ -1,6 +1,7 @@
 import numpy as np
 from ....potential_fields.magnetics import Simulation3DIntegral as Sim
 from ....utils import sdiag, mkvc
+from dask import array
 
 
 def dask_getJtJdiag(self, m, W=None, f=None):
@@ -10,13 +11,19 @@ def dask_getJtJdiag(self, m, W=None, f=None):
 
     self.model = m
 
-    if W is None:
-        W = np.ones(self.nD)
-    else:
-        W = W.diagonal()
     if getattr(self, "_gtg_diagonal", None) is None:
+        if W is None:
+            W = np.ones(self.nD)
+        else:
+            W = W.diagonal()
+
         if not self.is_amplitude_data:
-            diag = ((W[:, None] * self.Jmatrix) ** 2).sum(axis=0).compute()
+
+            diag = array.einsum("i,ij,ij->j", W, self.Jmatrix, self.Jmatrix)
+
+            if isinstance(diag, array.Array):
+                diag = np.asarray(diag.compute())
+
         else:
             ampDeriv = self.ampDeriv
             J = (

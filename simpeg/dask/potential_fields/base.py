@@ -1,7 +1,7 @@
 import numpy as np
 from ...potential_fields.base import BasePFSimulation as Sim
 import os
-from dask import delayed, array, config
+from dask import delayed, array
 from dask.diagnostics import ProgressBar
 from ..utils import compute_chunk_sizes
 
@@ -42,21 +42,53 @@ def dask_residual(self, m, dobs, f=None):
 Sim.residual = dask_residual
 
 
+@delayed
+def block_rows(simulation, location_components):
+    rows = []
+    for location, components in location_components:
+        rows.append(simulation.evaluate_integral(location, components))
+
+    return np.vstack(rows)
+
+
+def split_list(elements, n_comps, n_cells, max_chunk_size=128):
+    problem_size = len(elements) * n_comps * n_cells * 8 / 1e6
+    n_splits = np.ceil(problem_size / max_chunk_size).astype(int)
+    block_size = np.ceil(len(elements) / n_splits).astype(int)
+    blocks = []
+    for ind in range(n_splits):
+        start = ind * block_size
+        end = np.min([len(elements), start + block_size])
+        blocks.append(elements[start:end])
+
+    return blocks
+
+
 def dask_linear_operator(self):
     forward_only = self.store_sensitivities == "forward_only"
-    row = delayed(self.evaluate_integral, pure=True)
+
     n_cells = self.nC
     if getattr(self, "model_type", None) == "vector":
         n_cells *= 3
 
+    work_list = list(self.survey._location_component_iterator())
+    components = work_list[0][1]  # Assume all receivers have same components
+    blocks = split_list(work_list, len(components), n_cells, self.max_chunk_size)
+
     rows = [
         array.from_delayed(
-            row(receiver_location, components),
+            block_rows(self, block),
             dtype=self.sensitivity_dtype,
-            shape=(len(components),) if forward_only else (len(components), n_cells),
+            shape=(
+                (len(components) * len(block),)
+                if forward_only
+                else (len(components) * len(block), n_cells)
+            ),
         )
-        for receiver_location, components in self.survey._location_component_iterator()
+        for block in blocks
+        if len(block) > 0
     ]
+
     if forward_only:
         stack = array.concatenate(rows)
     else:
