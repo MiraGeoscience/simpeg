@@ -3265,9 +3265,7 @@ class SaveSensitivityGeoH5(SaveArrayGeoH5):
 
     def get_values(self, values: list[np.ndarray] | None):
         if values is None:
-            values = np.zeros_like(self.invProb.model)
-            for fun in self.dmisfit.objfcts:
-                values += fun.getJtJdiag(self.invProb.model)
+            values = self.dmisfit.getJtJdiag(self.invProb.model)
 
         return values
 

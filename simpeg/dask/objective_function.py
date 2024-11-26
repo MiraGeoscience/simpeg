@@ -12,7 +12,10 @@ BaseObjectiveFunction._workers = None
 @property
 def client(self):
     if getattr(self, "_client", None) is None:
-        self._client = get_client()
+        try:
+            self._client = get_client()
+        except ValueError:
+            self._client = False
 
     return self._client
 
@@ -48,28 +51,25 @@ def dask_call(self, m, f=None):
             continue
         else:
 
-            if f is not None and objfct._has_fields:
-                fct = objfct(m, f=f[i])
+            if self.client and isinstance(objfct, L2DataMisfit):
+                fields = f[i] if f is not None else None
+                fct = self.client.submit(objfct(m, f=fields))
             else:
                 fct = objfct(m)
 
-            if isinstance(fct, Future):
-                future = self.client.compute(
-                    self.client.submit(da.multiply, multiplier, fct).result()
-                )
-                fcts += [future]
-            else:
-                fcts += [fct]
-
+            fcts += [fct]
             multipliers += [multiplier]
 
-    if isinstance(fcts[0], Future):
-        phi = self.client.submit(
-            da.sum, self.client.submit(da.vstack, fcts), axis=0
-        ).result()
-        return phi
+    if self.client and isinstance(fcts[0], Future):
+        phi = self.client.gather(fcts)
     else:
-        return np.sum(np.r_[multipliers][:, None] * np.vstack(fcts), axis=0).squeeze()
+        phi = fcts
+
+    value = 0.
+    for multiplier, phi in zip(multipliers, phi):
+        value += multiplier * phi
+
+    return value
 
 
 ComboObjectiveFunction.__call__ = dask_call
@@ -93,29 +93,23 @@ def dask_deriv(self, m, f=None):
             continue
         else:
 
-            if f is not None and isinstance(objfct, L2DataMisfit):
-                fct = objfct.deriv(m, f=f[i])
+            if self.client and isinstance(objfct, L2DataMisfit):
+                fields = f[i] if f is not None else None
+                fct = self.client.submit(objfct.deriv(m, f=fields))
             else:
                 fct = objfct.deriv(m)
 
-            if isinstance(fct, Future):
-                future = self.client.compute(
-                    self.client.submit(da.multiply, multiplier, fct)
-                )
-                g += [future]
-            else:
-                g += [fct]
-
+            g += [fct]
             multipliers += [multiplier]
 
-    if isinstance(g[0], Future):
-        big_future = self.client.submit(
-            da.sum, self.client.submit(da.vstack, g), axis=0
-        ).result()
-        return self.client.compute(big_future).result()
+    if self.client and isinstance(g[0], Future):
+        rows = self.client.gather(g)
 
-    else:
-        return np.sum(np.r_[multipliers][:, None] * np.vstack(g), axis=0).squeeze()
+    deriv = 0.
+    for multiplier, g in zip(multipliers, g):
+        deriv += multiplier * g
+
+    return deriv
 
 
 ComboObjectiveFunction.deriv = dask_deriv
@@ -139,29 +133,22 @@ def dask_deriv2(self, m, v=None, f=None):
         if multiplier == 0.0:  # don't evaluate the fct
             continue
         else:
-            fct = objfct.deriv2(m, v)
-
-            if isinstance(fct, Future):
-                future = self.client.submit(da.multiply, multiplier, fct)
-                H += [future]
+            if self.client and isinstance(objfct, L2DataMisfit):
+                fct = self.client.submit(objfct.deriv2(m, v=v, f=f[i]))
             else:
-                H += [fct]
+                fct = objfct.deriv2(m, v=v)
 
+            H += [fct]
             multipliers += [multiplier]
 
-    if isinstance(H[0], Future):
-        big_future = self.client.submit(
-            da.sum, self.client.submit(da.vstack, H), axis=0
-        ).result()
+    if self.client and isinstance(H[0], Future):
+        H = self.client.gather(H)
 
-        return np.asarray(big_future)
+    phi_deriv2 = 0
+    for multiplier, h in zip(multipliers, H):
+        phi_deriv2 += multiplier * h
 
-    else:
-        phi_deriv2 = 0
-        for multiplier, h in zip(multipliers, H):
-            phi_deriv2 += multiplier * h
-
-        return phi_deriv2
+    return phi_deriv2
 
 
 ComboObjectiveFunction.deriv2 = dask_deriv2
@@ -169,18 +156,28 @@ ComboObjectiveFunction.deriv2 = dask_deriv2
 
 def getJtJdiag(self, m):
 
-    jtj_diag = []
+    jtj_diags = []
+    multipliers = []
     for multiplier, dmisfit in self:
 
-        if getattr(self, "client", None) is not None:
-            jtj_diag.append(self.client.submit(dmisfit.getJtJdiag, m, pure=False))
+        if self.client:
+            jtj_diags.append(self.client.persist(dmisfit.getJtJdiag(m), pure=False))
         else:
-            jtj_diag.append(multiplier * dmisfit.getJtJdiag(m))
+            jtj_diags.append(dmisfit.getJtJdiag(m))
 
-    if getattr(self, "client", None) is not None:
-        jtj_diag = self.client.gather(jtj_diag)
+        multipliers += [multiplier]
 
-    return np.vstack(jtj_diag).sum(axis=0)
+    if self.client:
+        result = self.client.gather(jtj_diags)
+    else:
+        result = jtj_diags
+
+
+    jtj_diag = 0.
+    for multiplier, row in zip(multipliers, jtj_diags):
+        jtj_diag += multiplier * row
+
+    return np.asarray(jtj_diag)
 
 
 ComboObjectiveFunction.getJtJdiag = getJtJdiag

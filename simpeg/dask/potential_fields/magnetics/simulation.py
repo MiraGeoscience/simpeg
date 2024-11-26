@@ -1,7 +1,8 @@
 import numpy as np
 from ....potential_fields.magnetics import Simulation3DIntegral as Sim
 from ....utils import sdiag, mkvc
-from dask import array
+from dask import array, delayed
+from scipy.sparse import csr_matrix as csr
 
 
 def dask_getJtJdiag(self, m, W=None, f=None):
@@ -18,11 +19,7 @@ def dask_getJtJdiag(self, m, W=None, f=None):
             W = W.diagonal()
 
         if not self.is_amplitude_data:
-
             diag = array.einsum("i,ij,ij->j", W, self.Jmatrix, self.Jmatrix)
-
-            if isinstance(diag, array.Array):
-                diag = np.asarray(diag.compute())
 
         else:
             ampDeriv = self.ampDeriv
@@ -36,7 +33,13 @@ def dask_getJtJdiag(self, m, W=None, f=None):
     else:
         diag = self._gtg_diagonal
 
-    return mkvc((sdiag(np.sqrt(diag)) @ self.chiDeriv).power(2).sum(axis=0))
+    mapping_deriv = self.chiDeriv.tocsr().T.power(2)
+    dmudm_jtvec = delayed(csr.dot)(mapping_deriv, diag)
+    h_vec = array.from_delayed(
+        dmudm_jtvec, dtype=np.float32, shape=[self.chiDeriv.shape[1]]
+    )
+
+    return h_vec
 
 
 Sim.getJtJdiag = dask_getJtJdiag

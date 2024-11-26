@@ -85,11 +85,11 @@ def make_synthetic_data(
 
     dpred = self.dpred(m, f=f)
 
-    if not isinstance(dpred, np.ndarray):
-        dpred = compute(self, dpred)
-        if isinstance(dpred, Future):
-            client = get_client()
-            dpred = client.gather(dpred)
+    # if not isinstance(dpred, np.ndarray):
+    #     dpred = compute(self, dpred)
+    #     if isinstance(dpred, Future):
+    #         client = get_client()
+    #         dpred = client.gather(dpred)
 
     dclean = np.asarray(dpred)
 
@@ -170,25 +170,23 @@ def Jmatrix(self):
     Sensitivity matrix stored on disk
     """
     if getattr(self, "_Jmatrix", None) is None:
-        if self.workers is None:
-            self._Jmatrix = self.compute_J()
-            self._G = self._Jmatrix
-        else:
-            client = get_client()  # Assumes a Client already exists
+        # if self.workers is None:
+        self._Jmatrix = self.compute_J()
+        self._G = self._Jmatrix
+        # else:
+        #     if self.store_sensitivities == "ram":
+        #         self._Jmatrix = client.persist(
+        #             delayed(self.compute_J)(), workers=self.workers
+        #         )
+        #     else:
+        #         self._Jmatrix = client.compute(
+        #             delayed(self.compute_J)(), workers=self.workers
+        #         )
 
-            if self.store_sensitivities == "ram":
-                self._Jmatrix = client.persist(
-                    delayed(self.compute_J)(), workers=self.workers
-                )
-            else:
-                self._Jmatrix = client.compute(
-                    delayed(self.compute_J)(), workers=self.workers
-                )
-
-    elif isinstance(self._Jmatrix, Future):
-        self._Jmatrix.result()
-        if self.store_sensitivities == "disk":
-            self._Jmatrix = array.from_zarr(self.sensitivity_path + "J.zarr")
+    # elif isinstance(self._Jmatrix, Future):
+    #     self._Jmatrix.result()
+    #     if self.store_sensitivities == "disk":
+    #         self._Jmatrix = array.from_zarr(self.sensitivity_path + "J.zarr")
 
     return self._Jmatrix
 
@@ -236,11 +234,11 @@ def dask_dpred(self, m=None, f=None, compute_J=False):
                 )
             )
 
-    data = array.hstack(rows).compute()
+    data = array.hstack(rows)
 
     if compute_J and self._Jmatrix is None:
-        Jmatrix = self.compute_J(f=f)
-        return data, Jmatrix
+        self._Jmatrix = self.compute_J(f=f)
+        return data
 
     return data
 
@@ -263,9 +261,6 @@ def dask_getJtJdiag(self, m, W=None):
             W = W.diagonal() ** 2.0
 
         diag = array.einsum("i,ij,ij->j", W, self.Jmatrix, self.Jmatrix)
-
-        if isinstance(diag, array.Array):
-            diag = np.asarray(diag.compute())
 
         self._jtjdiag = diag
 
