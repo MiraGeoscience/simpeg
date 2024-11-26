@@ -165,3 +165,22 @@ def dask_deriv2(self, m, v=None, f=None):
 
 
 ComboObjectiveFunction.deriv2 = dask_deriv2
+
+
+def getJtJdiag(self, m):
+
+    jtj_diag = []
+    for multiplier, dmisfit in self:
+
+        if getattr(self, "client", None) is not None:
+            jtj_diag.append(self.client.submit(dmisfit.getJtJdiag, m, pure=False))
+        else:
+            jtj_diag.append(multiplier * dmisfit.getJtJdiag(m))
+
+    if getattr(self, "client", None) is not None:
+        jtj_diag = self.client.gather(jtj_diag)
+
+    return np.vstack(jtj_diag).sum(axis=0)
+
+
+ComboObjectiveFunction.getJtJdiag = getJtJdiag
