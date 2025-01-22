@@ -98,38 +98,34 @@ def getSourceTerm(self, freq, source=None):
     Assemble the source term. This ensures that the RHS is a vector / array
     of the correct size
     """
-    try:
-        client = get_client()
-    except ValueError:
-        client = None
-
     if source is None:
 
         source_list = self.survey.get_sources_by_frequency(freq)
-        source_block = np.array_split(source_list, self.n_threads(client))
+        # source_block = np.array_split(source_list, self.n_threads(client))
 
         block_compute = []
 
-        if client:
-            sim = client.scatter(self, workers=self.worker)
-            source_block = client.scatter(source_block, workers=self.worker)
-        else:
-            delayed_source_eval = delayed(source_eval)
+        # if client:
+        #     sim = client.scatter(self, workers=self.worker)
+        #     source_block = client.scatter(source_block, workers=self.worker)
+        # else:
+        #     delayed_source_eval = delayed(source_eval)
 
-        for block in source_block:
-            if client:
-                block_compute.append(
-                    client.submit(source_eval, sim, block, workers=self.worker)
-                )
-            else:
-                block_compute.append(delayed_source_eval(self, block))
+        for block in [source_list]:
+            block_compute.append(source_eval(self, block))
+            # if client:
+            #     block_compute.append(
+            #         client.submit(source_eval, sim, block, workers=self.worker)
+            #     )
+            # else:
+            #     block_compute.append(delayed_source_eval(self, block))
 
-        if client:
-            blocks = client.gather(block_compute)
-        else:
-            blocks = compute(block_compute)[0]
+        # if client:
+        #     blocks = client.gather(block_compute)
+        # else:
+        #     blocks = compute(block_compute)[0]
         s_m, s_e = [], []
-        for block in blocks:
+        for block in block_compute:
             if block[0]:
                 # for source in self.survey.get_sources_by_frequency(freq):
                 #     sm, se = source.eval(self)
@@ -194,7 +190,7 @@ def dpred(self, m=None, f=None, compute_J=False):
         for rx in src.receiver_list:
             all_receivers.append((src, ind, rx))
 
-    receiver_blocks = np.array_split(np.asarray(all_receivers), self.n_threads)
+    receiver_blocks = np.array_split(np.asarray(all_receivers), self.n_threads(client))
     rows = []
 
     if client:
@@ -428,5 +424,5 @@ Sim.Jvec = Jvec
 Sim.Jtvec = Jtvec
 Sim.Jmatrix = Jmatrix
 Sim.fields = fields
-# Sim.dpred = dpred
-# Sim.getSourceTerm = getSourceTerm
+Sim.dpred = dpred
+Sim.getSourceTerm = getSourceTerm

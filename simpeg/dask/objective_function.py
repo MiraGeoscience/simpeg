@@ -5,6 +5,7 @@ from dask.distributed import Client
 from ..data_misfit import L2DataMisfit
 import os
 from simpeg.utils import validate_list_of_types
+from tqdm import tqdm
 
 OUTFILE = os.getcwd() + "/update.txt"
 
@@ -70,7 +71,7 @@ def _validate_type_or_future_of_type(
     )
     workload = [[]]
     count = 0
-    for obj in objects:
+    for obj in tqdm(objects, desc="Scattering misfits on workers"):
         if count == len(workers):
             count = 0
             workload.append([])

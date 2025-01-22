@@ -4,8 +4,9 @@ import os
 from ....electromagnetics.time_domain.simulation import BaseTDEMSimulation as Sim
 
 from ....utils import Zero
-from ...simulation import client, getJtJdiag, Jvec, Jtvec, Jmatrix
-from simpeg.fields import TimeFields
+from ...simulation import getJtJdiag, Jvec, Jtvec, Jmatrix
+
+# from simpeg.fields import TimeFields
 from multiprocessing import cpu_count
 import numpy as np
 import scipy.sparse as sp
@@ -354,7 +355,7 @@ def _getField(self, name, ind, src_list):
 
 
 # TimeFields._getField = _getField
-TimeFields.client = client
+# TimeFields.client = client
 
 
 def field_projection(field_array, src_list, array_ind, time_ind, func):
@@ -692,7 +693,7 @@ def compute_rows(
     return np.vstack(rows)
 
 
-Sim.client = client
+# Sim.client = client
 Sim.fields = fields
 Sim.getJtJdiag = getJtJdiag
 Sim.getSourceTerm = getSourceTerm
