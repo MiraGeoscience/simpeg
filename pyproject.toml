@@ -5,9 +5,15 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "mira-simpeg"
+version = "0.0.0" ## dummy version to pass Poetry
+
+dynamic = ["dependencies", "version"]
+
+requires-python = ">=3.10,<4.0"
+
+
 description = "Mira Geoscience fork of SimPEG: Simulation and Parameter Estimation in Geophysics"
 readme = "README.rst"
-requires-python = ">=3.10"
 
 authors = [
     { name = "SimPEG developers", email = "rowanc1@gmail.com" },
@@ -18,7 +24,7 @@ keywords = ["geophysics", "inverse problem"]
 dependencies = [
     "discretize>=0.11",
     "geoana>=0.7.0",
-    "geoh5py>=0.12.0a1, <0.13.dev",
+    "geoh5py>=0.11.0a1, <0.13.dev",
     "libdlf",
     "matplotlib",
     "numpy>=1.22",
@@ -43,7 +49,6 @@ classifiers = [
     "Natural Language :: English",
 ]
 
-dynamic = ["version"]
 
 [project.license]
 file = 'LICENSE'
@@ -85,7 +90,7 @@ docs = [
     "pillow",
     "sympy",
     "memory_profiler",
-    "python-kaleido",
+    "kaleido",
 ]
 tests = [
     "simpeg[all,docs]",
