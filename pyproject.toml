@@ -1,11 +1,11 @@
 [build-system]
-requires = ["setuptools>=64", "setuptools_scm>=8"]
-build-backend = "setuptools.build_meta"
+requires = ["poetry-core>=1.0.0", "poetry-dynamic-versioning>=1.0.0,<2.0.0"]
+build-backend = "poetry_dynamic_versioning.backend"
+
 
 
 [project]
 name = "mira-simpeg"
-version = "0.0.0" ## dummy version to pass Poetry
 
 dynamic = ["dependencies", "version"]
 
@@ -21,6 +21,8 @@ authors = [
 ]
 
 keywords = ["geophysics", "inverse problem"]
+
+
 dependencies = [
     "discretize>=0.11",
     "geoana>=0.7.0",
@@ -31,6 +33,7 @@ dependencies = [
     "pymatsolver>=0.3",
     "scipy>=1.8",
 ]
+
 
 classifiers = [
     "Development Status :: 4 - Beta",
@@ -48,6 +51,38 @@ classifiers = [
     "Operating System :: MacOS",
     "Natural Language :: English",
 ]
+
+
+[tool.poetry]
+packages = [{ include = "simpeg" }]
+version = "0.0.0"
+
+
+[tool.poetry-dynamic-versioning]
+enable = true
+vcs = "git"
+style = "pep440"
+
+
+[tool.poetry-dynamic-versioning.substitution]
+files = ["simpeg/version.py", "recipe.yaml"]
+patterns = [
+    { value = '''(^__version__\s*(?::.*?)?=\s*['"])[^'"]*(['"])''', mode = "str" },
+    { value = '''(^\s*version\s*(?::.*?)?:\s*['"])[^'"]*(['"])''', mode = "str" },
+    { value = '''(^__version_tuple__\s*(?::.*?)?=\s*\()[^)]*(\))''', mode = "tuple" },
+]
+
+
+[tool.poetry-dynamic-versioning.files."simpeg/version.py"]
+persistent-substitution = true
+initial-content = """
+  # These version placeholders will be replaced later during substitution.
+  __version__ = "0.0.0"
+  __version_tuple__ = (0, 0, 0)
+"""
+
+[tool.poetry-dynamic-versioning.files."recipe.yaml"]
+persistent-substitution = true
 
 
 [project.license]
@@ -266,4 +301,5 @@ rst-roles = [
 filterwarnings = [
     "ignore::simpeg.utils.solver_utils.DefaultSolverWarning",
 ]
+
 
