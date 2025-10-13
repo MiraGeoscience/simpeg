@@ -102,7 +102,6 @@ is used under the hood to handle the execution of all directives passed to the
 from ._directives import (
     InversionDirective,
     DirectiveList,
-    BetaEstimateDerivative,
     BetaEstimateMaxDerivative,
     BetaEstimate_ByEig,
     BetaSchedule,
