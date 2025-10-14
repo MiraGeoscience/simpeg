@@ -497,13 +497,14 @@ class Minimize(object):
 
         if np.any(np.isnan(x0)):
             raise ValueError("x0 has a nan.")
-        self.f = evalFunction(
-            self.xc, return_g=False, return_H=False
-        )  # will stash the fields objects
-        self.printIter()
+        # self.f = evalFunction(
+        #     self.xc, return_g=False, return_H=False
+        # )  # will stash the fields objects
+        # self.printIter()
         while True:
             self.doStartIteration()
             self.f, self.g, self.H = evalFunction(self.xc, return_g=True, return_H=True)
+            self.printIter()
             if self.stoppingCriteria():
                 break
             self.searchDirection = self.findSearchDirection()
@@ -832,7 +833,6 @@ class Minimize(object):
         # the current iterate, `self.xc`, must be set in this function if overridden in a base class
         self.x_last, self.xc = self.xc, xt
         self.iter += 1
-        self.printIter()  # before callbacks (from directives...)
         if self.debug:
             self.printDone()
 
