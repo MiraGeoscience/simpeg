@@ -5,6 +5,8 @@ on:
     tags:
       - 'v*' # Push events to every version tag (eg. v1.0.0)
 
+permissions: {}
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref || github.run_id }}
   cancel-in-progress: true
@@ -12,10 +14,9 @@ concurrency:
 jobs:
   call-workflow-conda-publish:
     name: Publish development conda package on JFrog Artifactory
-    uses: MiraGeoscience/CI-tools/.github/workflows/reusable-python-publish_rattler_package.yml@main
+    uses: MiraGeoscience/CI-tools/.github/workflows/reusable-python-publish_rattler_package.yml@v2
     permissions:
-      contents: write  # to create draft release and attach artifacts
-      actions: read
+      contents: write
     with:
       package-name: 'mira-simpeg'
       python-version: '3.10'
@@ -28,10 +29,9 @@ jobs:
       JFROG_ARTIFACTORY_TOKEN: ${{ secrets.JFROG_ARTIFACTORY_TOKEN }}
   call-workflow-pypi-publish:
     name: Publish development pypi package (JFrog Artifactory, TestPyPI)
-    uses: MiraGeoscience/CI-tools/.github/workflows/reusable-python-publish_pypi_package.yml@main
+    uses: MiraGeoscience/CI-tools/.github/workflows/reusable-python-publish_pypi_package.yml@v2
     permissions:
-      contents: write  # to create draft release and attach artifacts
-      actions: read
+      contents: write
     with:
       package-manager: 'setuptools'
       package-name: 'mira-simpeg'
