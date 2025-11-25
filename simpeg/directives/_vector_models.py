@@ -5,7 +5,6 @@ from . import (
     InversionDirective,
     SaveModelGeoH5,
     SphericalUnitsWeights,
-    Update_IRLS,
     UpdateIRLS,
     UpdateSensitivityWeights,
 )
@@ -254,7 +253,7 @@ class VectorInversion(InversionDirective):
 
                     directive.transforms = transforms
 
-                elif isinstance(directive, Update_IRLS | UpdateIRLS):
+                elif isinstance(directive, UpdateIRLS):
                     directive.sphericalDomain = True
                     directive.model = model
                     directive.coolingFactor = 1.5
