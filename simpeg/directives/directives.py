@@ -1,7 +1,4 @@
-
 from __future__ import annotations  # needed to use type operands in Python 3.8
-
-from abc import ABC, abstractmethod
 
 from datetime import datetime
 from pathlib import Path
@@ -13,12 +10,12 @@ import matplotlib.pyplot as plt
 import warnings
 import os
 import scipy.sparse as sp
-from ..meta.simulation import MetaSimulation
+
 from ..typing import RandomSeed
 
 from ..data_misfit import BaseDataMisfit
-from ..objective_function import ComboObjectiveFunction
-from ..maps import IdentityMap, SphericalSystem, Wires
+from ..objective_function import BaseObjectiveFunction, ComboObjectiveFunction
+from ..maps import IdentityMap, Wires
 
 from ..regularization import (
     WeightedLeastSquares,
@@ -31,21 +28,17 @@ from ..regularization import (
     SmoothnessFirstOrder,
     SparseSmoothness,
     BaseSimilarityMeasure,
-    CrossGradient,
 )
 from ..utils import (
     mkvc,
     set_kwargs,
     sdiag,
     estimate_diagonal,
-    spherical2cartesian,
-    cartesian2spherical,
     Zero,
     eigenvalue_by_power_iteration,
     validate_string,
 )
 
-from simpeg.utils.mat_utils import cartesian2amplitude_dip_azimuth
 
 from ..utils.code_utils import (
     deprecate_class,
@@ -55,25 +48,27 @@ from ..utils.code_utils import (
     validate_float,
     validate_ndarray_with_shape,
 )
-from geoh5py.groups.property_group import GroupTypeEnum
-from geoh5py.groups import PropertyGroup, UIJsonGroup
-from geoh5py.objects import ObjectBase
-from geoh5py.ui_json.utils import fetch_active_workspace
 
 
 def compute_JtJdiags(data_misfit, m):
     if hasattr(data_misfit, "getJtJdiag"):
         return data_misfit.getJtJdiag(m)
     else:
-        jtj_diags = []
-        for dmisfit in data_misfit.objfcts:
-            jtj_diags.append(dmisfit.getJtJdiag(m))
+        jtj_diag_list = []
+        jtj_diag = np.zeros_like(m)
 
-        jtj_diag = np.zeros_like(jtj_diags[0])
-        for multiplier, diag in zip(data_misfit.multipliers, jtj_diags):
+        for dmisfit in data_misfit.objfcts:
+            if isinstance(dmisfit, ComboObjectiveFunction):
+                jtj_diag += compute_JtJdiags(dmisfit, m)
+
+            else:
+                jtj_diag_list.append(dmisfit.getJtJdiag(m))
+
+        for multiplier, diag in zip(data_misfit.multipliers, jtj_diag_list):
             jtj_diag += multiplier * diag
 
     return np.asarray(jtj_diag)
+
 
 if TYPE_CHECKING:
     from ..simulation import BaseSimulation
@@ -213,7 +208,7 @@ class InversionDirective:
             The data misfit associated with the directive.
         """
         if getattr(self, "_dmisfit", None) is None:
-            self.dmisfit = self.invProb.dmisfit  # go through the setter
+            self._dmisfit = self.invProb.dmisfit  # go through the setter
         return self._dmisfit
 
     @dmisfit.setter
@@ -468,7 +463,6 @@ class BaseBetaEstimator(InversionDirective):
 
         self._random_seed = value
 
-
     def validate(self, directive_list):
         ind = [isinstance(d, BaseBetaEstimator) for d in directive_list.dList]
         assert np.sum(ind) == 1, (
@@ -615,7 +609,7 @@ class BetaEstimateDerivative(BaseBetaEstimator):
         super().__init__(beta0_ratio=beta0_ratio, seed=seed, **kwargs)
 
     def initialize(self):
-        rng = np.random.default_rng(seed=self.seed)
+        rng = np.random.default_rng(seed=self.random_seed)
 
         if self.verbose:
             print("Calculating the beta0 parameter.")
@@ -1852,8 +1846,6 @@ class SaveEveryIteration(InversionDirective):
     @property
     def fileName(self):
         if getattr(self, "_fileName", None) is None:
-            from datetime import datetime
-
             self._fileName = "{0!s}-{1!s}".format(
                 self.name, datetime.now().strftime("%Y-%m-%d-%H-%M")
             )
@@ -3023,637 +3015,6 @@ class UpdateSensitivityWeights(InversionDirective):
         return True
 
 
-class ProjectSphericalBounds(InversionDirective):
-    r"""
-    Trick for spherical coordinate system.
-    Project \theta and \phi angles back to [-\pi,\pi] using
-    back and forth conversion.
-    spherical->cartesian->spherical
-    """
-
-    def initialize(self):
-        x = self.invProb.model
-        # Convert to cartesian than back to avoid over rotation
-        nC = int(len(x) / 3)
-        xyz = spherical2cartesian(x.reshape((nC, 3), order="F"))
-        m = cartesian2spherical(xyz.reshape((nC, 3), order="F"))
-        self.invProb.model = m
-        self.opt.xc = m
-
-        for misfit in self.dmisfit:
-            if getattr(misfit, "model_map", None) is not None:
-                misfit.simulation.model = misfit.model_map @ m
-            else:
-                misfit.simulation.model = m
-
-    def endIter(self):
-        for misfit in self.dmisfit.objfcts:
-            if (
-                hasattr(misfit.simulation, "model_type")
-                and misfit.simulation.model_type == "vector"
-            ):
-                mapping = misfit.model_map.deriv(np.zeros(misfit.model_map.shape[1]))
-                indices = (
-                    mapping.indices
-                )  # np.array(np.sum(mapping, axis=0)).flatten() > 0
-                nC = int(len(indices) / 3)
-                vec = self.invProb.model[indices]
-                # Convert to cartesian than back to avoid over rotation
-                xyz = spherical2cartesian(vec.reshape((nC, 3), order="F"))
-                vec = cartesian2spherical(xyz.reshape((nC, 3), order="F"))
-                self.invProb.model[indices] = vec
-
-        phi_m_last = []
-        for reg in self.reg.objfcts:
-            reg.model = self.invProb.model
-            phi_m_last += [reg(self.invProb.model)]
-
-        self.invProb.phi_m_last = phi_m_last
-        self.opt.xc = self.invProb.model
-
-        for misfit in self.dmisfit.objfcts:
-            if getattr(misfit, "model_map", None) is not None:
-                misfit.simulation.model = misfit.model_map @ self.invProb.model
-            else:
-                misfit.simulation.model = self.invProb.model
-
-
-class BaseSaveGeoH5(InversionDirective, ABC):
-    """
-    Base class for saving inversion results to a geoh5 file
-    """
-
-    def __init__(
-        self,
-        h5_object,
-        dmisfit=None,
-        label: str | None = None,
-        channels: list[str] = ("",),
-        components: list[str] = ("",),
-        association: str | None = None,
-        **kwargs,
-    ):
-        self.label = label
-        self.channels = channels
-        self.components = components
-        self.h5_object = h5_object
-
-        if association is not None:
-            self.association = association
-
-        super().__init__(
-            inversion=None, dmisfit=dmisfit, reg=None, verbose=False, **kwargs
-        )
-
-    def initialize(self):
-        self.write(0)
-
-    def endIter(self):
-        self.write(self.opt.iter)
-
-    def get_names(
-        self, component: str, channel: str, iteration: int
-    ) -> tuple[str, str]:
-        """
-        Format the data and property_group name.
-        """
-        base_name = f"Iteration_{iteration}"
-        if len(component) > 0:
-            base_name += f"_{component}"
-
-        channel_name = base_name
-        if channel:
-            channel_name += f"_{channel}"
-
-        if self.label is not None:
-            channel_name += f"_{self.label}"
-            base_name += f"_{self.label}"
-
-        return channel_name, base_name
-
-    @abstractmethod
-    def write(self, iteration: int, values: list[np.ndarray] = None):  # flake8: noqa
-        """
-        Save the components of the inversion.
-        """
-
-    @property
-    def label(self):
-        return self._label
-
-    @label.setter
-    def label(self, value: str | None):
-        if not isinstance(value, str | type(None)):
-            raise TypeError("'label' must be a string or None")
-
-        self._label = value
-
-    @property
-    def h5_object(self):
-        return self._h5_object
-
-    @h5_object.setter
-    def h5_object(self, entity: ObjectBase):
-        if not isinstance(entity, ObjectBase | UIJsonGroup):
-            raise TypeError(
-                f"Input entity should be of type {ObjectBase}. {type(entity)} provided"
-            )
-
-        self._h5_object = entity.uid
-        self._geoh5 = entity.workspace
-
-        if getattr(entity, "n_cells", None) is not None:
-            self.association = "CELL"
-        else:
-            self.association = "VERTEX"
-
-    @property
-    def association(self):
-        return self._association
-
-    @association.setter
-    def association(self, value):
-        if not value.upper() in ["CELL", "VERTEX"]:
-            raise ValueError(
-                f"'association must be one of 'CELL', 'VERTEX'. {value} provided"
-            )
-
-        self._association = value.upper()
-
-
-class SaveArrayGeoH5(BaseSaveGeoH5, ABC):
-    """
-    Saves array-based inversion results (model, data) to a geoh5 file.
-
-    Parameters
-    ----------
-
-    transforms: List of transformations applied to the values before save.
-    sorting: Special re-indexing of the vector values.
-    reshape: Re-ordering applied to the data before slicing.
-    """
-
-    _attribute_type = None
-
-    def __init__(
-        self,
-        h5_object,
-        transforms: list | tuple = (),
-        reshape=None,
-        sorting=None,
-        **kwargs,
-    ):
-        self.data_type = {}
-        self.transforms = transforms
-        self.sorting = sorting
-        self.reshape = reshape
-
-        super().__init__(h5_object, **kwargs)
-
-    @property
-    def reshape(self):
-        """
-        Reshape function
-        """
-        if getattr(self, "_reshape", None) is None:
-            self._reshape = lambda x: x.reshape(
-                (len(self.channels), len(self.components), -1), order="F"
-            )
-
-        return self._reshape
-
-    @reshape.setter
-    def reshape(self, fun):
-        self._reshape = fun
-
-    @property
-    def transforms(self):
-        return self._transforms
-
-    @transforms.setter
-    def transforms(self, funcs: list | tuple):
-        if not isinstance(funcs, list | tuple):
-            funcs = [funcs]
-
-        for fun in funcs:
-            if not any(
-                [isinstance(fun, (IdentityMap, np.ndarray, float)), callable(fun)]
-            ):
-                raise TypeError(
-                    "Input transformation must be of type"
-                    + "SimPEG.maps, numpy.ndarray or callable function"
-                )
-
-        self._transforms = funcs
-
-    def stack_channels(self, dpred: list):
-        """
-        Regroup channel values along rows.
-        """
-        if isinstance(dpred, np.ndarray):
-            return self.reshape(dpred)
-
-        return self.reshape(np.hstack(dpred))
-
-    def apply_transformations(self, prop: np.ndarray) -> np.ndarray:
-        """
-        Re-order the values and apply transformations.
-        """
-        prop = prop.flatten()
-        for fun in self.transforms:
-            if isinstance(fun, (IdentityMap, np.ndarray, float)):
-                prop = fun * prop
-            else:
-                prop = fun(prop)
-
-        if prop.ndim == 2:
-            prop = prop.T.flatten()
-
-        prop = prop.reshape((len(self.channels), len(self.components), -1))
-
-        return prop
-
-    @abstractmethod
-    def get_values(self, values: list[np.ndarray] | None):
-        """
-        Get values for the inversion depending on the output type.
-        """
-
-    def write(self, iteration: int, values: list[np.ndarray] = None):  # flake8: noqa
-        """
-        Sort, transform and store data per components and channels.
-        """
-        prop = self.get_values(values)
-
-        # Apply transformations
-        prop = self.apply_transformations(prop)
-
-        # Save results
-        with fetch_active_workspace(self._geoh5, mode="r+") as w_s:
-            h5_object = w_s.get_entity(self.h5_object)[0]
-            for cc, component in enumerate(self.components):
-                if component not in self.data_type:
-                    self.data_type[component] = {}
-
-                for ii, channel in enumerate(self.channels):
-                    values = prop[ii, cc, :]
-
-                    if self.sorting is not None:
-                        values = values[self.sorting]
-
-                    channel_name, base_name = self.get_names(
-                        component, channel, iteration
-                    )
-
-                    data = h5_object.add_data(
-                        {
-                            channel_name: {
-                                "association": self.association,
-                                "values": values,
-                            }
-                        }
-                    )
-                    # Re-assign the data type
-                    if channel not in self.data_type[component].keys():
-                        self.data_type[component][channel] = data.entity_type
-                        type_name = f"{self._attribute_type}_{component}"
-                        if channel:
-                            type_name += f"_{channel}"
-                        data.entity_type.name = type_name
-                    else:
-                        data.entity_type = w_s.find_type(
-                            self.data_type[component][channel].uid,
-                            type(self.data_type[component][channel]),
-                        )
-
-
-class SaveModelGeoH5(SaveArrayGeoH5):
-    """
-    Save the model at the current iteration to a geoh5 file.
-    """
-
-    _attribute_type = "model"
-
-    def get_values(self, values: list[np.ndarray] | None):
-        if values is None:
-            values = self.invProb.model
-
-        return values
-
-
-class SaveSensitivityGeoH5(SaveArrayGeoH5):
-    """
-    Save the model at the current iteration to a geoh5 file.
-    """
-
-    _attribute_type = "sensitivities"
-
-    def __init__(self, h5_object, dmisfit=None, **kwargs):
-        if dmisfit is None:
-            raise ValueError(
-                "To save sensitivities, the data misfit object must be provided."
-            )
-        super().__init__(h5_object, dmisfit=dmisfit, **kwargs)
-
-    def get_values(self, values: list[np.ndarray] | None):
-        if values is None:
-            values = compute_JtJdiags(self.dmisfit, self.invProb.model)
-
-        return values
-
-
-class SaveDataGeoH5(SaveArrayGeoH5):
-    """
-    Save the model at the current iteration to a geoh5 file.
-    """
-
-    _attribute_type = "predicted"
-
-    def __init__(self, h5_object, joint_index: list[int] | None = None, **kwargs):
-        self.joint_index = joint_index
-
-        super().__init__(h5_object, **kwargs)
-
-    def get_values(self, values: list[np.ndarray] | None):
-
-        if values is not None:
-            prop = self.stack_channels(values)
-
-        else:
-            dpred = getattr(self.invProb, "dpred", None)
-            if dpred is None:
-                dpred = self.invProb.get_dpred(self.invProb.model)
-                self.invProb.dpred = dpred
-
-            if self.joint_index is not None:
-                dpred = [dpred[ind] for ind in self.joint_index]
-
-            prop = self.stack_channels(dpred)
-
-        return prop
-
-    @property
-    def joint_index(self):
-        """
-        Index for joint inversions defining the element in the list of predicted data.
-        """
-        return self._joint_index
-
-    @joint_index.setter
-    def joint_index(self, value: list[int] | None):
-        if not isinstance(value, list | type(None)):
-            raise TypeError("Input 'joint_index' should be a list of int")
-
-        self._joint_index = value
-
-
-class SaveLogFilesGeoH5(BaseSaveGeoH5):
-
-    def write(self, iteration: int, **_):
-        dirpath = Path(self._geoh5.h5file).parent
-        filepath = dirpath / "SimPEG.out"
-
-        if iteration == 0:
-            with open(filepath, "w", encoding="utf-8") as f:
-                f.write("iteration beta phi_d phi_m time\n")
-
-        with open(filepath, "a", encoding="utf-8") as f:
-            date_time = datetime.now().strftime("%b-%d-%Y:%H:%M:%S")
-            f.write(
-                f"{iteration} {self.invProb.beta:.3e} {self.invProb.phi_d:.3e} "
-                f"{self.invProb.phi_m:.3e} {date_time}\n"
-            )
-
-        self.save_log()
-
-    def save_log(self):
-        """
-        Save iteration metrics to comments.
-        """
-        dirpath = Path(self._geoh5.h5file).parent
-
-        with fetch_active_workspace(self._geoh5, mode="r+") as w_s:
-            h5_object = w_s.get_entity(self.h5_object)[0]
-
-            for file in ["SimPEG.out", "SimPEG.log", "ChiFactors.log"]:
-                filepath = dirpath / file
-
-                if not filepath.is_file():
-                    continue
-
-                with open(filepath, "rb") as f:
-                    raw_file = f.read()
-
-                file_entity = h5_object.get_entity(file)[0]
-                if file_entity is None:
-                    file_entity = h5_object.add_file(filepath)
-
-                file_entity.file_bytes = raw_file
-
-
-class SavePropertyGroup(BaseSaveGeoH5):
-    """
-    Save the model as a property group in the geoh5 file
-    """
-
-    def __init__(
-        self,
-        h5_object,
-        group_type: GroupTypeEnum = GroupTypeEnum.MULTI,
-        **kwargs,
-    ):
-        self.group_type = group_type
-
-        super().__init__(h5_object, **kwargs)
-
-    def write(self, iteration: int, **_):
-        """
-        Save the model to the geoh5 file
-        """
-        with fetch_active_workspace(self._geoh5, mode="r+") as w_s:
-            h5_object = w_s.get_entity(self.h5_object)[0]
-
-            for component in self.components:
-                properties = []
-                for channel in self.channels:
-
-                    channel_name, base_name = self.get_names(
-                        component, channel, iteration
-                    )
-                    child = [
-                        child
-                        for child in h5_object.children
-                        if channel_name in child.name
-                    ][0]
-
-                    if child is not None:
-                        properties.append(child)
-
-                if len(properties) == 0:
-                    return
-
-                PropertyGroup(
-                    parent=h5_object,
-                    name=base_name,
-                    properties=properties,
-                    property_group_type=self.group_type,
-                )
-
-
-class VectorInversion(InversionDirective):
-    """
-    Control a vector inversion from Cartesian to spherical coordinates.
-    """
-
-    chifact_target = 1.0
-    reference_model = None
-    mode = "cartesian"
-    inversion_type = "mvis"
-    norms = []
-    alphas = []
-    cartesian_model = None
-    mappings = []
-    regularization = []
-
-    def __init__(
-        self, simulations: list, regularizations: ComboObjectiveFunction, **kwargs
-    ):
-        self.reference_angles = (False, False, False)
-        self.simulations = simulations
-        self.regularizations = regularizations
-
-        set_kwargs(self, **kwargs)
-
-    @property
-    def target(self):
-        if getattr(self, "_target", None) is None:
-            nD = 0
-            for survey in self.survey:
-                nD += survey.nD
-
-            self._target = nD * self.chifact_target
-
-        return self._target
-
-    @target.setter
-    def target(self, val):
-        self._target = val
-
-    def initialize(self):
-        for reg in self.reg.objfcts:
-            reg.model = self.invProb.model
-
-        self.reference_model = reg.reference_model
-
-        for dmisfit in self.dmisfit.objfcts:
-            if getattr(dmisfit.simulation, "coordinate_system", None) is not None:
-                dmisfit.simulation.coordinate_system = self.mode
-
-    def endIter(self):
-        if (
-            self.invProb.phi_d < self.target
-        ) and self.mode == "cartesian":  # and self.inversion_type == 'mvis':
-            print("Switching MVI to spherical coordinates")
-            self.mode = "spherical"
-            self.cartesian_model = self.invProb.model
-            model = self.invProb.model
-            vec_model = []
-            vec_ref = []
-            indices = []
-            for reg in self.regularizations.objfcts:
-                vec_model.append(reg.mapping * model)
-                vec_ref.append(reg.mapping * reg.reference_model)
-                mapping = reg.mapping.deriv(np.zeros(reg.mapping.shape[1]))
-                indices.append(mapping.indices)
-
-            indices = np.hstack(indices)
-            nC = mapping.shape[0]
-            vec_model = cartesian2spherical(np.vstack(vec_model).T)
-            vec_ref = cartesian2spherical(np.vstack(vec_ref).T).flatten()
-            model[indices] = vec_model.flatten()
-
-            angle_map = []
-            for ind, (reg_fun, ref_angle) in enumerate(
-                zip(self.regularizations.objfcts, self.reference_angles)
-            ):
-                reg_fun.model = model
-                reg_fun.reference_model[indices] = vec_ref
-
-                if ind > 0:
-                    if not ref_angle:
-                        reg_fun.alpha_s = 0
-
-                    reg_fun.eps_q = np.pi
-                    reg_fun.units = "radian"
-                    angle_map.append(reg_fun.mapping)
-                else:
-                    reg_fun.units = "amplitude"
-
-            # Change units of cross-gradient on angles
-            multipliers = []
-            for mult, reg in self.reg:
-                if isinstance(reg, CrossGradient):
-                    units = []
-                    for _, wire in reg.wire_map.maps:
-                        if wire in angle_map:
-                            units.append("radian")
-                            mult = 0  # TODO Make this optional
-                        else:
-                            units.append("metric")
-
-                    reg.units = units
-
-                multipliers.append(mult)
-
-            self.reg.multipliers = multipliers
-            self.invProb.beta *= 2
-            self.invProb.model = model
-            self.opt.xc = model
-            self.opt.lower[indices] = np.kron(
-                np.asarray([0, -np.inf, -np.inf]), np.ones(nC)
-            )
-            self.opt.upper[indices[nC:]] = np.inf
-
-            for simulation in self.simulations:
-                if isinstance(simulation, MetaSimulation):
-                    for sim in simulation.simulations:
-                        sim.chiMap = SphericalSystem() * sim.chiMap
-                else:
-                    simulation.chiMap = SphericalSystem() * simulation.chiMap
-
-            # Add and update directives
-            for directive in self.inversion.directiveList.dList:
-                if (
-                    isinstance(directive, SaveModelGeoH5)
-                    and cartesian2amplitude_dip_azimuth in directive.transforms
-                ):
-                    transforms = []
-
-                    for fun in directive.transforms:
-                        if fun is cartesian2amplitude_dip_azimuth:
-                            transforms += [spherical2cartesian]
-                        transforms += [fun]
-
-                    directive.transforms = transforms
-
-                elif isinstance(directive, Update_IRLS):
-                    directive.sphericalDomain = True
-                    directive.model = model
-                    directive.coolingFactor = 1.5
-
-                elif isinstance(directive, UpdateSensitivityWeights):
-                    directive.every_iteration = True
-
-            directiveList = [
-                ProjectSphericalBounds()
-            ] + self.inversion.directiveList.dList
-            self.inversion.directiveList = directiveList
-
-            for directive in directiveList:
-                if not isinstance(directive, BaseSaveGeoH5):
-                    directive.endIter()
-
-
 class ScaleMisfitMultipliers(InversionDirective):
     """
     Scale the misfits by the relative chi-factors of multiple misfit functions.
@@ -3669,12 +3030,12 @@ class ScaleMisfitMultipliers(InversionDirective):
         Path to save the chi-factors log file.
     """
 
-    def __init__(self, path: Path | None, **kwargs):
+    def __init__(self, path: Path | None = None, **kwargs):
         self.last_beta = None
         self.chi_factors = None
 
         if path is None:
-            path = Path()
+            path = Path("./")
 
         self.filepath = path / "ChiFactors.log"
 
@@ -3697,10 +3058,9 @@ class ScaleMisfitMultipliers(InversionDirective):
     def endIter(self):
         ratio = self.invProb.beta / self.last_beta
         chi_factors = []
-        for objfct, pred in zip(self.invProb.dmisfit.objfcts, self.invProb.dpred):
-            residual = objfct.W * (objfct.data.dobs - pred)
+        for residual in self.invProb.residuals:
             phi_d = np.vdot(residual, residual)
-            chi_factors.append(phi_d / objfct.nD)
+            chi_factors.append(phi_d / len(residual))
 
         self.chi_factors = np.asarray(chi_factors)
 
@@ -3723,7 +3083,7 @@ class ScaleMisfitMultipliers(InversionDirective):
         )
 
         # Update the scaling
-        self.scalings *= scalings
+        self.scalings = self.scalings * scalings
 
         # Normalize total phi_d with scalings
         self.invProb.dmisfit.multipliers = self.multipliers * self.scalings

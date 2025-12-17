@@ -1,4 +1,6 @@
 import gc
+import os
+import shutil
 
 from ....electromagnetics.frequency_domain.simulation import BaseFDEMSimulation as Sim
 from ....utils import Zero
@@ -7,7 +9,6 @@ import numpy as np
 import scipy.sparse as sp
 
 from dask import array, compute, delayed
-from dask.distributed import get_client
 from simpeg.dask.utils import get_parallel_blocks
 from simpeg.electromagnetics.natural_source.sources import PlanewaveXYPrimary
 import zarr
@@ -51,7 +52,9 @@ def receiver_derivs(survey, mesh, fields, blocks):
     return field_derivatives
 
 
-def eval_block(simulation, Ainv_deriv_u, deriv_indices, deriv_m, fields, address):
+def compute_rows(
+    simulation, Ainv_deriv_u, deriv_indices, deriv_m, fields, address, Jmatrix
+):
     """
     Evaluate the sensitivities for the block or data
     """
@@ -93,7 +96,14 @@ def eval_block(simulation, Ainv_deriv_u, deriv_indices, deriv_m, fields, address
     if not isinstance(deriv_m, Zero):
         du_dmT += deriv_m
 
-    return np.array(du_dmT, dtype=complex).reshape((du_dmT.shape[0], -1)).real.T
+    values = np.array(du_dmT, dtype=complex).reshape((du_dmT.shape[0], -1)).real.T
+
+    if isinstance(Jmatrix, zarr.Array):
+        Jmatrix.set_orthogonal_selection((address[1][1], slice(None)), values)
+    else:
+        Jmatrix[address[1][1], :] = values
+
+    return None
 
 
 def getSourceTerm(self, freq, source=None):
@@ -104,20 +114,17 @@ def getSourceTerm(self, freq, source=None):
 
     if source is None:
 
-        try:
-            client = get_client()
-            sim = client.scatter(self, workers=self.worker)
-        except ValueError:
-            client = None
-            sim = self
-
+        client, worker = self._get_client_worker()
         source_list = self.survey.get_sources_by_frequency(freq)
         source_blocks = np.array_split(
-            np.arange(len(source_list)), self.n_threads(client=client)
+            np.arange(len(source_list)), self.n_threads(client=client, worker=worker)
         )
 
         if client:
-            source_list = client.scatter(source_list, workers=self.worker)
+            sim = client.scatter(self, workers=self.worker)
+            source_list = client.scatter(source_list, workers=worker)
+        else:
+            sim = self
 
         block_compute = []
 
@@ -127,9 +134,7 @@ def getSourceTerm(self, freq, source=None):
 
             if client:
                 block_compute.append(
-                    client.submit(
-                        source_eval, sim, source_list, block, workers=self.worker
-                    )
+                    client.submit(source_eval, sim, source_list, block, workers=worker)
                 )
             else:
                 block_compute.append(source_eval(sim, source_list, block))
@@ -201,32 +206,38 @@ def compute_J(self, m, f=None):
             "Consider creating one misfit per frequency."
         )
 
+    client, worker = self._get_client_worker()
+
     A_i = list(Ainv.values())[0]
     m_size = m.size
+    compute_row_size = np.ceil(self.max_chunk_size / (A_i.A.shape[0] * 32.0 * 1e-6))
+    blocks = get_parallel_blocks(
+        self.survey.source_list, compute_row_size, optimize=True
+    )
 
     if self.store_sensitivities == "disk":
+
+        chunk_size = np.median(
+            [np.sum([len(chunk[1][1]) for chunk in block]) for block in blocks]
+        ).astype(int)
+
+        if os.path.exists(self.sensitivity_path):
+            shutil.rmtree(self.sensitivity_path)
+
         Jmatrix = zarr.open(
             self.sensitivity_path,
             mode="w",
             shape=(self.survey.nD, m_size),
-            chunks=(self.max_chunk_size, m_size),
+            chunks=(chunk_size, m_size),
         )
     else:
         Jmatrix = np.zeros((self.survey.nD, m_size), dtype=np.float32)
 
-    compute_row_size = np.ceil(self.max_chunk_size / (A_i.A.shape[0] * 32.0 * 1e-6))
-    blocks = get_parallel_blocks(
-        self.survey.source_list, compute_row_size, optimize=False
-    )
+        if client:
+            Jmatrix = client.scatter(Jmatrix, workers=worker)
+
     fields_array = f[:, self._solutionType]
     blocks_receiver_derivs = []
-
-    try:
-        client = get_client()
-        worker = self.worker
-    except ValueError:
-        client = None
-        worker = None
 
     if client:
         fields_array = client.scatter(f[:, self._solutionType], workers=worker)
@@ -271,7 +282,7 @@ def compute_J(self, m, f=None):
     for block_derivs_chunks, addresses_chunks in zip(
         blocks_receiver_derivs, blocks, strict=True
     ):
-        Jmatrix = parallel_block_compute(
+        parallel_block_compute(
             simulation,
             m,
             Jmatrix,
@@ -281,7 +292,6 @@ def compute_J(self, m, f=None):
             addresses_chunks,
             client,
             worker,
-            store_sensitivities=self.store_sensitivities,
         )
 
     for A in Ainv.values():
@@ -291,7 +301,10 @@ def compute_J(self, m, f=None):
     gc.collect()
     if self.store_sensitivities == "disk":
         del Jmatrix
-        Jmatrix = array.from_zarr(self.sensitivity_path)
+        return array.from_zarr(self.sensitivity_path)
+
+    if client:
+        return client.gather(Jmatrix)
 
     return Jmatrix
 
@@ -306,7 +319,6 @@ def parallel_block_compute(
     addresses,
     client,
     worker=None,
-    store_sensitivities="disk",
 ):
     m_size = m.size
     block_stack = sp.hstack(blocks_receiver_derivs).toarray()
@@ -317,10 +329,9 @@ def parallel_block_compute(
         ATinvdf_duT = client.scatter(ATinvdf_duT, workers=worker)
     else:
         ATinvdf_duT = delayed(ATinvdf_duT)
-    count = 0
-    rows = []
-    block_delayed = []
 
+    count = 0
+    block_delayed = []
     for address, dfduT in zip(addresses, blocks_receiver_derivs):
         n_cols = dfduT.shape[1]
         n_rows = address[1][2]
@@ -328,18 +339,19 @@ def parallel_block_compute(
         if client:
             block_delayed.append(
                 client.submit(
-                    eval_block,
+                    compute_rows,
                     simulation,
                     ATinvdf_duT,
                     np.arange(count, count + n_cols),
                     Zero(),
                     fields_array,
                     address,
+                    Jmatrix,
                     workers=worker,
                 )
             )
         else:
-            delayed_eval = delayed(eval_block)
+            delayed_eval = delayed(compute_rows)
             block_delayed.append(
                 array.from_delayed(
                     delayed_eval(
@@ -349,35 +361,20 @@ def parallel_block_compute(
                         Zero(),
                         fields_array,
                         address,
+                        Jmatrix,
                     ),
                     dtype=np.float32,
                     shape=(n_rows, m_size),
                 )
             )
         count += n_cols
-        rows += address[1][1].tolist()
-
-    indices = np.hstack(rows)
 
     if client:
-        block_delayed = client.gather(block_delayed)
-        block = np.vstack(block_delayed)
+        return client.gather(block_delayed)
     else:
-        block = compute(array.vstack(block_delayed))[0]
-
-    if store_sensitivities == "disk":
-        Jmatrix.set_orthogonal_selection(
-            (indices, slice(None)),
-            block,
-        )
-    else:
-        # Dask process to compute row and store
-        Jmatrix[indices, :] = block
-
-    return Jmatrix
+        return compute(block_delayed)
 
 
-Sim.parallel_block_compute = parallel_block_compute
 Sim.compute_J = compute_J
 Sim.getJtJdiag = getJtJdiag
 Sim.Jvec = Jvec

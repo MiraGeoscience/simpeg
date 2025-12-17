@@ -57,20 +57,25 @@ def get_parallel_blocks(
                     block_count += 1
                     blocks.append([])
 
+                locs = rx.locations
+
+                if isinstance(locs, tuple):
+                    locs = locs[0]
+
                 blocks[block_count].append(
                     (
                         (s_id, r_id, ind),
                         (
                             chunk,
                             np.arange(row_index, row_index + chunk_size).astype(int),
-                            rx.locations.shape[0],
+                            locs.shape[0],
                         ),
                     )
                 )
                 row_index += chunk_size
                 row_count += chunk_size
 
-    # Re-split over cpu_count if too few blocks
+    # # Re-split over cpu_count if too few blocks
     if len(blocks) < thread_count and optimize:
         flatten_blocks = []
         for block in blocks:

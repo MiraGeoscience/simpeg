@@ -11,11 +11,15 @@ on:
       publish-conda:
         description: 'Publish Conda package'
         required: false
+        type: boolean
         default: true
       publish-pypi:
         description: 'Publish PyPI package'
         required: false
+        type: boolean
         default: true
+
+permissions: {}
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.release.tag_name || github.event.inputs.release-tag || github.run_id }}
@@ -24,10 +28,12 @@ concurrency:
 jobs:
   call-workflow-conda-release:
     name: Publish production Conda package on JFrog Artifactory
-    uses: MiraGeoscience/CI-tools/.github/workflows/reusable-python-release_conda_assets.yml@main
     if: ${{ github.event_name == 'release' || github.event.inputs.publish-conda == 'true' }}
+    uses: MiraGeoscience/CI-tools/.github/workflows/reusable-python-release_conda_assets.yml@v2
+    permissions:
+      contents: write
     with:
-      virtual-repo-names: '["public-conda-prod"]'
+      virtual-repo-names: '["public-noremote-conda-prod"]'
       release-tag: ${{ github.event.release.tag_name || github.event.inputs.release-tag }}
     secrets:
       JFROG_ARTIFACTORY_URL: ${{ secrets.JFROG_ARTIFACTORY_URL }}
@@ -35,7 +41,9 @@ jobs:
   call-workflow-pypi-release:
     name: Publish production PyPI package (JFrog Artifactory, PyPI)
     if: ${{ github.event_name == 'release' || github.event.inputs.publish-pypi == 'true' }}
-    uses: MiraGeoscience/CI-tools/.github/workflows/reusable-python-release_pypi_assets.yml@main
+    uses: MiraGeoscience/CI-tools/.github/workflows/reusable-python-release_pypi_assets.yml@v2
+    permissions:
+      contents: write
     with:
       package-name: 'mira-simpeg'
       virtual-repo-names: '["public-pypi-prod", "pypi"]'

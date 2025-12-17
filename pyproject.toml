@@ -7,7 +7,7 @@ build-backend = "setuptools.build_meta"
 name = "mira-simpeg"
 description = "Mira Geoscience fork of SimPEG: Simulation and Parameter Estimation in Geophysics"
 readme = "README.rst"
-requires-python = ">=3.10"
+requires-python = ">=3.10,<4.0"
 
 authors = [
     { name = "SimPEG developers", email = "rowanc1@gmail.com" },
@@ -16,13 +16,14 @@ authors = [
 
 keywords = ["geophysics", "inverse problem"]
 dependencies = [
-    "numpy>=1.22",
-    "scipy>=1.8",
-    "pymatsolver>=0.3",
-    "matplotlib",
     "discretize>=0.11",
-    "geoana>=0.7",
+    "geoana>=0.7.0",
+    "geoh5py>=0.12.0b3, <0.13.dev",
     "libdlf",
+    "matplotlib",
+    "numpy>=1.22",
+    "pymatsolver>=0.3",
+    "scipy>=1.8",
 ]
 
 classifiers = [
@@ -34,6 +35,7 @@ classifiers = [
     "Topic :: Scientific/Engineering",
     "Topic :: Scientific/Engineering :: Mathematics",
     "Topic :: Scientific/Engineering :: Physics",
+    "Topic :: Software Development :: Libraries :: Python Modules",
     "Operating System :: Microsoft :: Windows",
     "Operating System :: POSIX",
     "Operating System :: Unix",
@@ -102,6 +104,7 @@ include = ["simpeg*"]
 
 [tool.setuptools_scm]
 version_file = "simpeg/version.py"
+write_to = "_version.txt"
 local_scheme = "node-and-date"
 
 [tool.coverage.run]
@@ -135,7 +138,7 @@ exclude_also = [
 directory = "coverage_html_report"
 
 [tool.black]
-required-version = '24.3.0'
+required-version = '25.1.0'
 target-version = ['py38', 'py39', 'py310', 'py311']
 
 [tool.flake8]

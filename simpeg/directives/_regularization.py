@@ -218,30 +218,26 @@ class UpdateIRLS(InversionDirective):
         chi_factor : float
             Chi factor to compute the target misfit from.
         """
-        value = 0
-
-        for survey in self.survey:
-            value += survey.nD * chi_factor
-
-        return value
+        return np.hstack(self.invProb.dpred).shape[0] * chi_factor
 
     def adjust_cooling_schedule(self):
         """
         Adjust the cooling schedule based on the misfit.
         """
-        ratio = self.invProb.phi_d / self.misfit_from_chi_factor(self.chifact_target)
+        if self.metrics.start_irls_iter is None:
+            return
 
-        if (
-            np.abs(1.0 - ratio) > self.misfit_tolerance
-            and self.metrics.start_irls_iter is not None
-        ):
+        ratio = self.invProb.phi_d / self.misfit_from_chi_factor(self.chifact_target)
+        if np.abs(1.0 - ratio) > self.misfit_tolerance:
 
             if ratio > 1:
-                ratio = np.mean([2.0, ratio])
+                update_ratio = 1 / np.mean([0.75, 1 / ratio])
             else:
-                ratio = np.mean([0.75, ratio])
+                update_ratio = 1 / np.mean([2.0, 1 / ratio])
 
-            self.cooling_factor = ratio
+            self.cooling_factor = update_ratio
+        else:
+            self.cooling_factor = 1.0
 
     def initialize(self):
         """
@@ -288,7 +284,10 @@ class UpdateIRLS(InversionDirective):
                 if not isinstance(reg, Sparse):
                     continue
 
-                for obj in reg.objfcts:
+                for multi, obj in reg:
+                    if multi == 0:
+                        continue
+
                     obj.irls_threshold /= self.irls_cooling_factor
 
             self.metrics.irls_iteration_count += 1
@@ -326,10 +325,16 @@ class UpdateIRLS(InversionDirective):
             if not isinstance(reg, Sparse):
                 continue
 
-            for obj in reg.objfcts:
-                threshold = np.percentile(
-                    np.abs(obj.mapping * obj._delta_m(self.invProb.model)),
-                    self.percentile,
+            for multi, obj in reg:
+                if multi == 0:
+                    continue
+
+                threshold = (
+                    np.percentile(
+                        np.abs(obj.mapping * obj._delta_m(self.invProb.model)),
+                        self.percentile,
+                    )
+                    + 1e-16
                 )
                 if isinstance(obj, SmoothnessFirstOrder):
                     threshold /= reg.regularization_mesh.base_length
