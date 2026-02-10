@@ -504,12 +504,12 @@ class Minimize(object):
         while True:
             self.doStartIteration()
             self.f, self.g, self.H = evalFunction(self.xc, return_g=True, return_H=True)
-            print(self.g.max(), self.g.min())
+
             self.printIter()
             if self.stoppingCriteria():
                 break
             self.searchDirection = self.findSearchDirection()
-            print(self.searchDirection.max(), self.searchDirection.min())
+
             del (
                 self.H
             )  #: Doing this saves memory, as it is not needed in the rest of the computations.
@@ -1648,7 +1648,6 @@ class ProjectedGNCG(Bounded, InexactGaussNewton):
         r = resid  # - Inactive * (self.H * step)#  step is zero
 
         p = self.approxHinv * r
-        print(p.max(), p.min())
         sold = np.dot(r, p)
 
         count = 0
@@ -1677,7 +1676,6 @@ class ProjectedGNCG(Bounded, InexactGaussNewton):
             snew = np.dot(r, h)
 
             p = h + (snew / sold) * p
-            print(p.max(), p.min())
             sold = snew
             # End CG Iterations
         self.cg_count = count
