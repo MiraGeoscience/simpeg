@@ -116,7 +116,13 @@ def dask_evalFunction(self, m, return_g=True, return_H=True):
     if return_g:
         phi_dDeriv = self.dmisfit.deriv(m)
         phi_mDeriv = self.reg.deriv(m)
-
+        print(
+            self.beta,
+            phi_mDeriv.max(),
+            phi_mDeriv.min(),
+            phi_dDeriv.max(),
+            phi_dDeriv.min(),
+        )
         g = np.asarray(phi_dDeriv) + self.beta * phi_mDeriv
         out += (g,)
 

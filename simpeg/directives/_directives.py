@@ -2903,7 +2903,6 @@ def compute_JtJdiags(data_misfit, m):
                 jtj_diag_list.append(dmisfit.getJtJdiag(m))
 
         for multiplier, diag in zip(data_misfit.multipliers, jtj_diag_list):
-            print(diag.min(), diag.max(), np.median(diag))
             jtj_diag += multiplier * diag
 
     return np.asarray(jtj_diag)
