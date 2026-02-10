@@ -1648,7 +1648,7 @@ class ProjectedGNCG(Bounded, InexactGaussNewton):
         r = resid  # - Inactive * (self.H * step)#  step is zero
 
         p = self.approxHinv * r
-
+        print(p.max(), p.min())
         sold = np.dot(r, p)
 
         count = 0
@@ -1677,7 +1677,7 @@ class ProjectedGNCG(Bounded, InexactGaussNewton):
             snew = np.dot(r, h)
 
             p = h + (snew / sold) * p
-
+            print(p.max(), p.min())
             sold = snew
             # End CG Iterations
         self.cg_count = count
