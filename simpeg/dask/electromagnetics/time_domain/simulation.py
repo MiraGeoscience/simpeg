@@ -157,6 +157,7 @@ def compute_J(self, m, f=None):
                 AdiagTinv,
                 ATinv_df_duT_v[ind],
                 time_mask,
+                client,
             )
 
         if client:
@@ -166,7 +167,7 @@ def compute_J(self, m, f=None):
 
         for block_ind in range(len(blocks)):
 
-            if len(blocks[block_ind]) == 0:
+            if len(block) == 0:
                 continue
 
             if client:
@@ -337,13 +338,11 @@ def get_field_deriv_block(
     AdiagTinv,
     ATinv_df_duT_v,
     time_mask,
+    client,
 ):
     """
     Stack the blocks of field derivatives for a given timestep and call the direct solver.
     """
-    if len(block) == 0:
-        return None
-
     Asubdiag = None
     if tInd < self.nT - 1:
         Asubdiag = self.getAsubdiag(tInd + 1)
@@ -376,10 +375,8 @@ def get_field_deriv_block(
     if len(ATinv_df_duT_v) == 0:
         ATinv_df_duT_v = np.zeros((field_deriv.shape[0], colm_count), dtype=np.float32)
 
-    if len(time_blocks) > 0:
-        solve = AdiagTinv * np.hstack(time_blocks).reshape(
-            (ATinv_df_duT_v.shape[0], -1)
-        )
+    if len(time_blocks) > 1:
+        solve = AdiagTinv * np.hstack(time_blocks)
         ATinv_df_duT_v[:, np.hstack(colm_indices)] = solve
 
     return ATinv_df_duT_v
