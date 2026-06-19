@@ -377,7 +377,7 @@ def get_field_deriv_block(
         ATinv_df_duT_v = np.zeros((field_deriv.shape[0], colm_count), dtype=np.float32)
 
     block_array = np.hstack(time_blocks).reshape((ATinv_df_duT_v.shape[0], -1))
-    if len(block_array) > 0:
+    if block_array.shape[1] > 0:
         solve = AdiagTinv * block_array
         ATinv_df_duT_v[:, np.hstack(colm_indices)] = solve
 
