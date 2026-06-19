@@ -99,7 +99,7 @@ def compute_J(self, m, f=None):
         self.survey.source_list,
         compute_row_size,
         thread_count=self.n_threads(client=client, worker=worker),
-        optimize=False,
+        optimize=True,
     )
     fields_array = f[:, ftype, :]
 
