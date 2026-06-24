@@ -55,7 +55,8 @@ class BaseSaveGeoH5(InversionDirective, ABC):
         if self.open_geoh5 and not getattr(self._workspace, "_geoh5", None):
             self._workspace.open(mode="r+")
 
-        self.write(0)
+        if getattr(self.opt, "iter", 0) == 0:
+            self.write(0)
 
         if self.close_geoh5:
             self._workspace.close()
@@ -421,9 +422,6 @@ class SaveLogFilesGeoH5(BaseSaveGeoH5):
 
             with open(filepath, "a", encoding="utf-8") as file:
                 date_time = datetime.now().strftime("%b-%d-%Y:%H:%M:%S")
-
-                if len(log) == 2:  # First iteration with 0th iter
-                    file.write(f"{0} " + " ".join(log[0]) + f" {date_time}\n")
                 file.write(f"{iteration-1} " + " ".join(log[-1]) + f" {date_time}\n")
 
         self.save_log()
