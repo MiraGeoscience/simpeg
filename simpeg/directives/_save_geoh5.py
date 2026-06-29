@@ -280,25 +280,32 @@ class SaveArrayGeoH5(BaseSaveGeoH5, ABC):
                     channel_name, base_name = self.get_names(
                         component, label, iteration
                     )
-
+                    data_type = self.data_type[component].get(ii, None)
                     data = h5_object.add_data(
                         {
                             channel_name: {
                                 "association": self.association,
                                 "values": values,
+                                "entity_type": data_type,
                             }
                         }
                     )
-                    # Re-assign the data type
-                    if ii not in self.data_type[component].keys():
+                    if data_type is None:
+                        type_name = f"{self._attribute_type}"
+
+                        if component:
+                            type_name += f"_{component}"
+
+                        if label:
+                            type_name += f"_{label}"
+
                         self.data_type[component][ii] = data.entity_type
-                        type_name = f"{self._attribute_type}_{component}" + f"_{label}"
                         data.entity_type.name = type_name
-                    else:
-                        data.entity_type = w_s.find_type(
-                            self.data_type[component][ii].uid,
-                            type(self.data_type[component][ii]),
-                        )
+
+            # data.entity_type = w_s.find_type(
+            #     self.data_type[component][ii].uid,
+            #     type(self.data_type[component][ii]),
+            # )
 
 
 class SaveModelGeoH5(SaveArrayGeoH5):

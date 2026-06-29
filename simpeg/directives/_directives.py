@@ -2706,7 +2706,8 @@ class ScaleMisfitMultipliers(InversionDirective):
         self.filepath = path
 
         super().__init__(**kwargs)
-
+        self._multipliers: np.ndarray | None = None
+        self._scalings: np.ndarray | None = None
         self._log_array: np.ndarray | None = None
 
     @property
@@ -2738,10 +2739,7 @@ class ScaleMisfitMultipliers(InversionDirective):
 
     def initialize(self):
         self.last_beta = self.invProb.beta
-        self.multipliers = self.invProb.dmisfit.multipliers
-        self.scalings = np.ones_like(self.multipliers)  # Everyone gets a fair chance
         self.misfit_tree_indices = self.parse_by_nested_levels(self.nesting)
-
         self.write_log()
 
     def scale_by_level(
@@ -2890,8 +2888,38 @@ class ScaleMisfitMultipliers(InversionDirective):
                 f,
                 self.log_array,
                 header="Iterations - Scaling per misfit",
-                fmt=["%d"] + ["%0.2e"] * (len(self._log_array.dtype) - 1),
+                fmt=["%d"] + ["%0.3e"] * (len(self._log_array.dtype) - 1),
             )
+
+    @property
+    def multipliers(self) -> np.ndarray:
+        """Static misfit multipliers set at the start of the inversion."""
+        if self._multipliers is None:
+            self._multipliers = self.invProb.dmisfit.multipliers
+
+        return self._multipliers
+
+    @multipliers.setter
+    def multipliers(self, value):
+        if not isinstance(value, np.ndarray):
+            raise TypeError("Multipliers must be a numpy array.")
+        self._multipliers = value
+
+    @property
+    def scalings(self) -> np.ndarray:
+        """Get the current scaling factors."""
+        if self._scalings is None:
+            self._scalings = np.ones_like(
+                self.invProb.dmisfit.multipliers
+            )  # Everyone gets a fair chance
+
+        return self._scalings
+
+    @scalings.setter
+    def scalings(self, value):
+        if not isinstance(value, np.ndarray):
+            raise TypeError("Scaling factors must be a numpy array.")
+        self._scalings = value
 
 
 def compute_JtJdiags(data_misfit, m):
