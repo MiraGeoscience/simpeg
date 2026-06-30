@@ -2691,11 +2691,13 @@ class ScaleMisfitMultipliers(InversionDirective):
         path: pathlib.Path | None = None,
         nesting: list[list] | None = None,
         target_chi: float = 1.0,
+        cooling_factor: float = 2.0,
         headers: list[str] | None = None,
         **kwargs,
     ):
-        self.last_beta = None
+
         self.chi_factors = None
+        self.cooling_factor = cooling_factor
         self.target_chi = target_chi
         self.nesting = nesting
         self.headers = headers
@@ -2706,6 +2708,7 @@ class ScaleMisfitMultipliers(InversionDirective):
         self.filepath = path
 
         super().__init__(**kwargs)
+        self._last_beta = None
         self._multipliers: np.ndarray | None = None
         self._scalings: np.ndarray | None = None
         self._log_array: np.ndarray | None = None
@@ -2738,7 +2741,6 @@ class ScaleMisfitMultipliers(InversionDirective):
         return self._log_array
 
     def initialize(self):
-        self.last_beta = self.invProb.beta
         self.misfit_tree_indices = self.parse_by_nested_levels(self.nesting)
         self.write_log()
 
@@ -2804,7 +2806,11 @@ class ScaleMisfitMultipliers(InversionDirective):
         return scaling_vector
 
     def endIter(self):
-        ratio = self.invProb.beta / self.last_beta
+        if self._last_beta is None:
+            ratio = 1.0 / self.cooling_factor
+        else:
+            ratio = self.invProb.beta / self._last_beta
+
         nested_residuals = self.parse_by_nested_levels(
             self.nesting, self.invProb.residuals
         )
@@ -2818,7 +2824,7 @@ class ScaleMisfitMultipliers(InversionDirective):
 
         # Normalize total phi_d with scalings
         self.invProb.dmisfit.multipliers = self.multipliers * self.scalings
-        self.last_beta = self.invProb.beta
+        self._last_beta = self.invProb.beta
 
         # Log the scaling factors
         self.write_log()
