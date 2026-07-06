@@ -302,11 +302,6 @@ class SaveArrayGeoH5(BaseSaveGeoH5, ABC):
                         self.data_type[component][ii] = data.entity_type
                         data.entity_type.name = type_name
 
-            # data.entity_type = w_s.find_type(
-            #     self.data_type[component][ii].uid,
-            #     type(self.data_type[component][ii]),
-            # )
-
 
 class SaveModelGeoH5(SaveArrayGeoH5):
     """
