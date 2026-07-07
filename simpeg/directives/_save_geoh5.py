@@ -55,7 +55,8 @@ class BaseSaveGeoH5(InversionDirective, ABC):
         if self.open_geoh5 and not getattr(self._workspace, "_geoh5", None):
             self._workspace.open(mode="r+")
 
-        self.write(0)
+        if getattr(self.opt, "iter", 0) == 0:
+            self.write(0)
 
         if self.close_geoh5:
             self._workspace.close()
@@ -279,25 +280,27 @@ class SaveArrayGeoH5(BaseSaveGeoH5, ABC):
                     channel_name, base_name = self.get_names(
                         component, label, iteration
                     )
-
+                    data_type = self.data_type[component].get(ii, None)
                     data = h5_object.add_data(
                         {
                             channel_name: {
                                 "association": self.association,
                                 "values": values,
+                                "entity_type": data_type,
                             }
                         }
                     )
-                    # Re-assign the data type
-                    if ii not in self.data_type[component].keys():
+                    if data_type is None:
+                        type_name = f"{self._attribute_type}"
+
+                        if component:
+                            type_name += f"_{component}"
+
+                        if label:
+                            type_name += f"_{label}"
+
                         self.data_type[component][ii] = data.entity_type
-                        type_name = f"{self._attribute_type}_{component}" + f"_{label}"
                         data.entity_type.name = type_name
-                    else:
-                        data.entity_type = w_s.find_type(
-                            self.data_type[component][ii].uid,
-                            type(self.data_type[component][ii]),
-                        )
 
 
 class SaveModelGeoH5(SaveArrayGeoH5):
@@ -421,9 +424,6 @@ class SaveLogFilesGeoH5(BaseSaveGeoH5):
 
             with open(filepath, "a", encoding="utf-8") as file:
                 date_time = datetime.now().strftime("%b-%d-%Y:%H:%M:%S")
-
-                if len(log) == 2:  # First iteration with 0th iter
-                    file.write(f"{0} " + " ".join(log[0]) + f" {date_time}\n")
                 file.write(f"{iteration-1} " + " ".join(log[-1]) + f" {date_time}\n")
 
         self.save_log()

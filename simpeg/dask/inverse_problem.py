@@ -57,7 +57,7 @@ BaseInvProblem.get_dpred = get_dpred
 def dask_evalFunction(self, m, return_g=True, return_H=True):
     """evalFunction(m, return_g=True, return_H=True)"""
 
-    if not np.allclose(self.model, m):
+    if not np.allclose(self.model, m) or getattr(self, "residuals", None) is None:
         self.model = m
         self.dpred, self.residuals = self.get_dpred(m, return_residuals=True)
 

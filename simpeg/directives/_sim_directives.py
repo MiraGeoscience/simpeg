@@ -397,9 +397,15 @@ class ScaleMaximumDerivatives(InversionDirective):
         """
         End of iteration update.
         """
+        self.scale_on_current_model(self.opt.xc)
+
+    def scale_on_current_model(self, model):
+        """
+        Scale the cross-gradient term based on the current iteration.
+        """
         max_deriv = []
         for _, wire in self.cross_gradient.wire_map.maps:
-            component = wire * self.opt.xc
+            component = wire * model
             max_deriv.append(
                 (component.max() - component.min())
                 / self.cross_gradient.regularization_mesh.base_length**2.0
