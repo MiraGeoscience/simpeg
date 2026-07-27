@@ -74,4 +74,5 @@ jobs:
         with:
           verbose: true
           packages-dir: download-assets/
+          repository-url: https://upload.pypi.org/legacy/
           attestations: true
