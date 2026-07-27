@@ -29,7 +29,7 @@ jobs:
   call-workflow-conda-release:
     name: Publish production Conda package on JFrog Artifactory
     if: ${{ github.event_name == 'release' || github.event.inputs.publish-conda == 'true' }}
-    uses: MiraGeoscience/CI-tools/.github/workflows/reusable-python-release_conda_assets.yml@v3
+    uses: MiraGeoscience/CI-tools/.github/workflows/reusable-python-release_conda_assets.yml@DEVOPS-1154
     permissions:
       contents: write
     with:
@@ -39,9 +39,9 @@ jobs:
       JFROG_ARTIFACTORY_URL: ${{ secrets.JFROG_ARTIFACTORY_URL }}
       JFROG_ARTIFACTORY_TOKEN: ${{ secrets.JFROG_ARTIFACTORY_TOKEN }}
   call-workflow-pypi-release:
-    name: Publish production PyPI package (JFrog Artifactory, PyPI)
+    name: Publish production PyPI package (JFrog Artifactory)
     if: ${{ github.event_name == 'release' || github.event.inputs.publish-pypi == 'true' }}
-    uses: MiraGeoscience/CI-tools/.github/workflows/reusable-python-release_pypi_assets.yml@v3
+    uses: MiraGeoscience/CI-tools/.github/workflows/reusable-python-release_pypi_assets.yml@DEVOPS-1154
     permissions:
       contents: write
     with:
@@ -51,4 +51,27 @@ jobs:
     secrets:
       JFROG_ARTIFACTORY_URL: ${{ secrets.JFROG_ARTIFACTORY_URL }}
       JFROG_ARTIFACTORY_TOKEN: ${{ secrets.JFROG_ARTIFACTORY_TOKEN }}
-      PYPI_TOKEN: ${{ secrets.PYPI_TOKEN }}
+  publish-pypi-release:
+    name: Publish production Python package to PyPI
+    needs: call-workflow-pypi-release
+    if: ${{ (github.event_name == 'release' || github.event.inputs.publish-pypi == 'true') && needs.call-workflow-pypi-release.result == 'success' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Download release assets
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          INPUTS_RELEASE_TAG: ${{ github.event.release.tag_name || github.event.inputs.release-tag }}
+        run: |
+          mkdir -p download-assets
+          cd download-assets
+          gh release download "${INPUTS_RELEASE_TAG}" -p '*.tar.gz' -p '*.whl'
+      - name: Publish package to PyPI
+        uses: pypa/gh-action-pypi-publish@v1.14.1
+        with:
+          verbose: true
+          packages-dir: download-assets/
+          attestations: true
