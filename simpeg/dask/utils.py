@@ -4,7 +4,7 @@ import numpy as np
 def compute_chunk_sizes(M, N, target_chunk_size):
     """
     Compute row and collumn chunk sizes for a matrix of shape MxN,
-    such that the chunks are below a certain threshold target_chunk_size (in Mb)
+    such that the chunks are below a certain threshold target_chunk_size (in MB)
     """
     nChunks_col = 1
     nChunks_row = 1
@@ -21,7 +21,7 @@ def compute_chunk_sizes(M, N, target_chunk_size):
 
         rowChunk = int(np.ceil(M / nChunks_row))
         colChunk = int(np.ceil(N / nChunks_col))
-        chunk_size = rowChunk * colChunk * 8 * 1e-6  # in Mb
+        chunk_size = rowChunk * colChunk * 8 * 1e-6  # in MB
     return rowChunk, colChunk
 
 
