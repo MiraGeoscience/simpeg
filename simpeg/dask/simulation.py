@@ -29,7 +29,7 @@ Sim.max_ram = max_ram
 
 @property
 def max_chunk_size(self):
-    "Largest chunk size (Mb) used by Dask"
+    "Largest chunk size (MB) used by Dask"
     return self._max_chunk_size
 
 

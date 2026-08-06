@@ -2691,11 +2691,13 @@ class ScaleMisfitMultipliers(InversionDirective):
         path: pathlib.Path | None = None,
         nesting: list[list] | None = None,
         target_chi: float = 1.0,
+        cooling_factor: float = 2.0,
         headers: list[str] | None = None,
         **kwargs,
     ):
-        self.last_beta = None
+
         self.chi_factors = None
+        self.cooling_factor = cooling_factor
         self.target_chi = target_chi
         self.nesting = nesting
         self.headers = headers
@@ -2706,7 +2708,9 @@ class ScaleMisfitMultipliers(InversionDirective):
         self.filepath = path
 
         super().__init__(**kwargs)
-
+        self._last_beta = None
+        self._multipliers: np.ndarray | None = None
+        self._scalings: np.ndarray | None = None
         self._log_array: np.ndarray | None = None
 
     @property
@@ -2737,11 +2741,7 @@ class ScaleMisfitMultipliers(InversionDirective):
         return self._log_array
 
     def initialize(self):
-        self.last_beta = self.invProb.beta
-        self.multipliers = self.invProb.dmisfit.multipliers
-        self.scalings = np.ones_like(self.multipliers)  # Everyone gets a fair chance
         self.misfit_tree_indices = self.parse_by_nested_levels(self.nesting)
-
         self.write_log()
 
     def scale_by_level(
@@ -2806,7 +2806,11 @@ class ScaleMisfitMultipliers(InversionDirective):
         return scaling_vector
 
     def endIter(self):
-        ratio = self.invProb.beta / self.last_beta
+        if self._last_beta is None:
+            ratio = 1.0 / self.cooling_factor
+        else:
+            ratio = self.invProb.beta / self._last_beta
+
         nested_residuals = self.parse_by_nested_levels(
             self.nesting, self.invProb.residuals
         )
@@ -2820,7 +2824,7 @@ class ScaleMisfitMultipliers(InversionDirective):
 
         # Normalize total phi_d with scalings
         self.invProb.dmisfit.multipliers = self.multipliers * self.scalings
-        self.last_beta = self.invProb.beta
+        self._last_beta = self.invProb.beta
 
         # Log the scaling factors
         self.write_log()
@@ -2890,8 +2894,38 @@ class ScaleMisfitMultipliers(InversionDirective):
                 f,
                 self.log_array,
                 header="Iterations - Scaling per misfit",
-                fmt=["%d"] + ["%0.2e"] * (len(self._log_array.dtype) - 1),
+                fmt=["%d"] + ["%0.3e"] * (len(self._log_array.dtype) - 1),
             )
+
+    @property
+    def multipliers(self) -> np.ndarray:
+        """Static misfit multipliers set at the start of the inversion."""
+        if self._multipliers is None:
+            self._multipliers = self.invProb.dmisfit.multipliers
+
+        return self._multipliers
+
+    @multipliers.setter
+    def multipliers(self, value):
+        if not isinstance(value, np.ndarray):
+            raise TypeError("Multipliers must be a numpy array.")
+        self._multipliers = value
+
+    @property
+    def scalings(self) -> np.ndarray:
+        """Get the current scaling factors."""
+        if self._scalings is None:
+            self._scalings = np.ones_like(
+                self.invProb.dmisfit.multipliers
+            )  # Everyone gets a fair chance
+
+        return self._scalings
+
+    @scalings.setter
+    def scalings(self, value):
+        if not isinstance(value, np.ndarray):
+            raise TypeError("Scaling factors must be a numpy array.")
+        self._scalings = value
 
 
 def compute_JtJdiags(data_misfit, m):

@@ -220,7 +220,7 @@ class IterationPrinters(object):
         "title": "f",
         "value": lambda M: M.f,
         "width": 10,
-        "format": lambda v: f"{v:1.2e}",
+        "format": lambda v: f"{v:1.3e}",
     }
     norm_g = {
         "title": "|proj(x-g)-x|",
@@ -228,7 +228,7 @@ class IterationPrinters(object):
             None if M.iter == 0 else norm(M.projection(M.xc - M.g) - M.xc)
         ),
         "width": 15,
-        "format": lambda v: f"{v:1.2e}",
+        "format": lambda v: f"{v:1.3e}",
     }
     totalLS = {
         "title": "LS",
@@ -247,7 +247,7 @@ class IterationPrinters(object):
         "title": "ft",
         "value": lambda M: M._LS_ft,
         "width": 10,
-        "format": lambda v: f"{v:1.2e}",
+        "format": lambda v: f"{v:1.3e}",
     }
     LS_t = {
         "title": "t",
@@ -259,14 +259,14 @@ class IterationPrinters(object):
         "title": "f + alp*g.T*p",
         "value": lambda M: M.f + M.LSreduction * M._LS_descent,
         "width": 16,
-        "format": lambda v: f"{v:1.2e}",
+        "format": lambda v: f"{v:1.3e}",
     }
     LS_WolfeCurvature = {
         "title": "alp*g.T*p",
         "str": "%d :    ft     = %1.4e >= alp*descent     = %1.4e",
         "value": lambda M: M.LScurvature * M._LS_descent,
         "width": 16,
-        "format": lambda v: f"{v:1.2e}",
+        "format": lambda v: f"{v:1.3e}",
     }
 
     itType = {
@@ -298,44 +298,44 @@ class IterationPrinters(object):
         "title": "beta",
         "value": lambda M: M.parent.beta,
         "width": 10,
-        "format": lambda v: f"{v:1.2e}",
+        "format": lambda v: f"{v:1.3e}",
     }
     phi_d = {
         "title": "phi_d",
         "value": lambda M: M.parent.phi_d,
         "width": 10,
-        "format": lambda v: f"{v:1.2e}",
+        "format": lambda v: f"{v:1.3e}",
     }
     phi_m = {
         "title": "phi_m",
         "value": lambda M: M.parent.phi_m,
         "width": 10,
-        "format": lambda v: f"{v:1.2e}",
+        "format": lambda v: f"{v:1.3e}",
     }
 
     phi_s = {
         "title": "phi_s",
         "value": lambda M: M.parent.phi_s,
         "width": 10,
-        "format": lambda v: f"{v:1.2e}",
+        "format": lambda v: f"{v:1.3e}",
     }
     phi_x = {
         "title": "phi_x",
         "value": lambda M: M.parent.phi_x,
         "width": 10,
-        "format": lambda v: f"{v:1.2e}",
+        "format": lambda v: f"{v:1.3e}",
     }
     phi_y = {
         "title": "phi_y",
         "value": lambda M: M.parent.phi_y,
         "width": 10,
-        "format": lambda v: f"{v:1.2e}",
+        "format": lambda v: f"{v:1.3e}",
     }
     phi_z = {
         "title": "phi_z",
         "value": lambda M: M.parent.phi_z,
         "width": 10,
-        "format": lambda v: f"{v:1.2e}",
+        "format": lambda v: f"{v:1.3e}",
     }
 
     iterationCG = {
@@ -349,14 +349,14 @@ class IterationPrinters(object):
         "title": "CG |Ax-b|/|b|",
         "value": lambda M: getattr(M, "cg_rel_resid", None),
         "width": 15,
-        "format": lambda v: f"{v:1.2e}",
+        "format": lambda v: f"{v:1.3e}",
     }
 
     iteration_CG_abs_residual = {
         "title": "CG |Ax-b|",
         "value": lambda M: getattr(M, "cg_abs_resid", None),
         "width": 11,
-        "format": lambda v: f"{v:1.2e}",
+        "format": lambda v: f"{v:1.3e}",
     }
 
 
@@ -397,7 +397,8 @@ class Minimize(object):
 
     def __init__(self, **kwargs):
         set_kwargs(self, **kwargs)
-
+        self.iter = 0
+        self.f0 = None
         self.stoppersLS = [
             StoppingCriteria.armijoGoldstein,
             StoppingCriteria.iterationLS,
@@ -546,8 +547,6 @@ class Minimize(object):
         x0 : numpy.ndarray
             initial x
         """
-
-        self.iter = 0
         self.iterLS = 0
         self.stopNextIteration = False
 
@@ -644,7 +643,7 @@ class Minimize(object):
         pass
 
     def stoppingCriteria(self, inLS: bool = False) -> bool:
-        if self.iter == 0:
+        if self.f0 is None:
             self.f0 = self.f
             self.g0 = self.g
         return check_stoppers(self, self.stoppers if not inLS else self.stoppersLS)
