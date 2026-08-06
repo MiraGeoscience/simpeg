@@ -379,7 +379,9 @@ def get_field_deriv_block(
     block_array = np.hstack(time_blocks).reshape((ATinv_df_duT_v.shape[0], -1))
     if block_array.shape[1] > 0:
         solve = AdiagTinv * block_array
-        ATinv_df_duT_v[:, np.hstack(colm_indices)] = solve
+        ATinv_df_duT_v[:, np.hstack(colm_indices).flatten()] = solve.reshape(
+            (-1, block_array.shape[1])
+        )
 
     return ATinv_df_duT_v
 
