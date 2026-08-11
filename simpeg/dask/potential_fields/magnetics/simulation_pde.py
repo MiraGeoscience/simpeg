@@ -40,7 +40,7 @@ def dask_getJtJdiag(self, m, W=None, f=None):
     if getattr(self, "_jtjdiag", None) is None:
         client, worker = self._get_client_worker()
 
-        n_threads = self.n_threads(client=client, worker=worker)
+        n_threads = self.n_threads(client=client, worker=worker) // 2
 
         chunks = np.array_split(
             np.arange(self.survey.receiver_locations.shape[0]), n_threads
