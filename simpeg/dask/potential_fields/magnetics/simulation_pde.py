@@ -31,7 +31,7 @@ def dask_getJtJdiag(self, m, W=None, f=None):
     """
 
     self.model = m
-
+    print("In new getJtJdiag")
     if W is None:
         uncertainties = np.ones(self.Jmatrix.shape[0])
     else:
