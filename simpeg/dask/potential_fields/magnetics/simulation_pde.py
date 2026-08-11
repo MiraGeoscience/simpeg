@@ -31,16 +31,16 @@ def dask_getJtJdiag(self, m, W=None, f=None):
     """
 
     self.model = m
-    print("In new getJtJdiag")
+
     if W is None:
         uncertainties = np.ones(self.Jmatrix.shape[0])
     else:
         uncertainties = W.diagonal()
 
-    if getattr(self, "_jtjdiag", None) is None:
+    if getattr(self, "_gtg_diagonal", None) is None:
         client, worker = self._get_client_worker()
 
-        n_threads = self.n_threads(client=client, worker=worker) // 2
+        n_threads = self.n_threads(client=client, worker=worker)
 
         chunks = np.array_split(
             np.arange(self.survey.receiver_locations.shape[0]), n_threads
@@ -96,9 +96,12 @@ def dask_getJtJdiag(self, m, W=None, f=None):
 
         diag = np.tile(np.vstack(diag).sum(axis=0), 3)
 
-        self._jtjdiag = diag
+        self._gtg_diagonal = diag
 
-    return mkvc((sdiag(np.sqrt(self._jtjdiag)) @ self.remDeriv).power(2).sum(axis=0))
+    else:
+        diag = self._gtg_diagonal
+
+    return mkvc((sdiag(np.sqrt(diag)) @ self.remDeriv).power(2).sum(axis=0))
 
 
 Sim.getJtJdiag = dask_getJtJdiag
