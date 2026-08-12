@@ -12,7 +12,22 @@ def distance_weights(
     cell_volumes,
     exponent=3,
     threshold=1e-2,
-):
+) -> np.ndarray:
+    """
+    Compute sum of weighted inverse distance weighting to
+    mimic sensitivities of magnetic data.
+
+    :param indices: Indices of data to process
+    :param locations: All receiver locations
+    :param uncertainties: Data uncertainties
+    :param cell_centers: Cell center locations of the inversion mesh
+    :param cell_volumes: Cell volumes of the inversion mesh
+    :param exponent: Exponent of the decay
+    :param threshold: Threshold to avoid zero division
+
+    :return: Weighted inverse distance sum over the locations for
+        each cell in the mesh.
+    """
     weights = np.zeros(len(cell_centers))
     for ind in indices:
         distance = np.linalg.norm(cell_centers - locations[ind], axis=1)
