@@ -5,7 +5,7 @@ from ....utils import sdiag, mkvc
 
 
 def distance_weights(
-    indices,
+    indices: list[int],
     locations,
     uncertainties,
     cell_centers,
@@ -99,10 +99,7 @@ def dask_getJtJdiag(self, m, W=None, f=None):
                             cell_volumes,
                         ),
                         dtype=np.float32,
-                        shape=(
-                            len(block),
-                            len(cell_centers),
-                        ),
+                        shape=(len(cell_centers),),
                     )
                 )
 
@@ -111,7 +108,7 @@ def dask_getJtJdiag(self, m, W=None, f=None):
         else:
             diag = compute(futures)[0]
 
-        diag = np.tile(np.vstack(diag).sum(axis=0), 3)
+        diag = np.tile(np.sum(diag, axis=0), 3)
 
         self._gtg_diagonal = diag
 
