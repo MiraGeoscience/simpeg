@@ -19,7 +19,7 @@ def distance_weights(
 
     :param indices: Indices of data to process
     :param locations: All receiver locations
-    :param uncertainties: Data uncertainties
+    :param uncertainties: Data uncertainties per components
     :param cell_centers: Cell center locations of the inversion mesh
     :param cell_volumes: Cell volumes of the inversion mesh
     :param exponent: Exponent of the decay
@@ -29,6 +29,7 @@ def distance_weights(
         each cell in the mesh.
     """
     weights = np.zeros(len(cell_centers))
+
     for ind in indices:
         distance = np.linalg.norm(cell_centers - locations[ind], axis=1)
         weights += (
@@ -53,13 +54,14 @@ def dask_getJtJdiag(self, m, W=None, f=None):
         uncertainties = W.diagonal()
 
     if getattr(self, "_gtg_diagonal", None) is None:
+
         client, worker = self._get_client_worker()
 
         n_threads = self.n_threads(client=client, worker=worker)
-
-        chunks = np.array_split(
-            np.arange(self.survey.receiver_locations.shape[0]), n_threads
-        )
+        n_data = self.survey.receiver_locations.shape[0]
+        chunks = np.array_split(np.arange(n_data), n_threads)
+        # Collapse the components
+        uncertainties = np.sum(uncertainties.reshape(n_data, -1) ** 2.0, axis=1) ** 0.5
         cell_centers = self.mesh.cell_centers.copy()
         cell_volumes = self.mesh.cell_volumes.copy()
         locations = self.survey.receiver_locations.copy()
