@@ -5,13 +5,13 @@ from ....utils import sdiag, mkvc
 
 
 def distance_weights(
-    indices: list[int],
-    locations,
-    uncertainties,
-    cell_centers,
-    cell_volumes,
-    exponent=3,
-    threshold=1e-2,
+    indices: np.ndarray,
+    locations: np.ndarray,
+    uncertainties: np.ndarray,
+    cell_centers: np.ndarray,
+    cell_volumes: np.ndarray,
+    exponent: float = 3.0,
+    threshold: float = 1e-2,
 ) -> np.ndarray:
     """
     Compute sum of weighted inverse distance weighting to
@@ -41,7 +41,7 @@ def distance_weights(
     return weights
 
 
-def dask_getJtJdiag(self, m, W=None, f=None):
+def dask_getJtJdiag(self, m: np.ndarray, W=None, f=None):
     """
     Return the diagonal of JtJ
     """
