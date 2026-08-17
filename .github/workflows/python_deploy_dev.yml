@@ -50,14 +50,21 @@ jobs:
       contents: read
       id-token: write
     steps:
-      # Intentionally a composite action, not a reusable workflow: PyPI trusted
-      # publishing checks the OIDC token's workflow_ref, which only matches this
-      # repo's own workflow file when the publish step runs as a step here rather
-      # than as a job in a called `uses:` workflow (job_workflow_ref is unsupported
-      # by PyPI - see MiraGeoscience/CI-tools DEVOPS-1154 and pypi/warehouse#11096).
-      - name: Publish package to TestPyPI
-        uses: MiraGeoscience/CI-tools/.github/actions/reusable-python-publish_to_pypi@DEVOPS-1154
+      - name: Download build artifact
+        uses: MiraGeoscience/CI-tools/.github/actions/reusable-python-download_dist@DEVOPS-1154
         with:
           source: artifact
           artifact-name: mira-simpeg-pip-package-build
+      # Intentionally a direct step here, not nested in a reusable workflow or
+      # composite action: PyPI trusted publishing checks the OIDC token's
+      # workflow_ref, which only matches this repo's own workflow file when the
+      # publish step runs at the top level (job_workflow_ref is unsupported by
+      # PyPI - see pypi/warehouse#11096). pypa/gh-action-pypi-publish also
+      # self-resolves its own docker image from github.action_repository/
+      # action_ref, which breaks the same way when nested more than one level
+      # deep (see MiraGeoscience/CI-tools DEVOPS-1154 and actions/runner#2473).
+      - name: Publish package to TestPyPI
+        uses: pypa/gh-action-pypi-publish@v1.14.1
+        with:
+          packages-dir: dist-download/
           repository-url: https://test.pypi.org/legacy/
