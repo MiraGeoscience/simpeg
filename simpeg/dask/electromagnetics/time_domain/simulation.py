@@ -88,10 +88,8 @@ def compute_J(self, m, f=None):
         f, Ainv = self.fields(m=m, return_Ainv=True)
 
     client, worker = self._get_client_worker()
-
     ftype = self._fieldType + "Solution"
     n_cells = m.size
-
     simulation_times = np.r_[0, np.cumsum(self.time_steps)] + self.t0
     data_times = self.survey.source_list[0].receiver_list[0].times
     compute_row_size = np.ceil(self.max_chunk_size / (m.shape[0] * 8.0 * 1e-6))
@@ -99,7 +97,7 @@ def compute_J(self, m, f=None):
         self.survey.source_list,
         compute_row_size,
         thread_count=self.n_threads(client=client, worker=worker),
-        optimize=False,
+        optimize=True,
     )
     fields_array = f[:, ftype, :]
 
