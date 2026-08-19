@@ -1223,7 +1223,7 @@ def validate_direction(property_name, obj, dim=3):
             obj = np.r_[0.0, 0.0, 1.0][:dim]
 
     obj = validate_ndarray_with_shape(
-        property_name, obj, shape=[(dim,), ("*", 3)], dtype=float
+        property_name, obj, shape=[(dim,), ("*", dim)], dtype=float
     )
 
     # Normalize the orientation
