@@ -5,8 +5,6 @@ from ...potential_fields.base import BasePFSimulation as Sim
 import os
 from dask import delayed, array, compute
 from dask.diagnostics import ProgressBar
-from dask.distributed import Client
-
 
 _chunk_format = "row"
 
@@ -68,9 +66,7 @@ def linear_operator(self):
     block_split = np.array_split(self.survey.receiver_locations, n_blocks)
     client, worker = self._get_client_worker()
 
-    if client is None:
-        client = Client()
-
+    # If no distributed Client is active, fall back to the local scheduler.
     if client and worker and self.store_sensitivities != "disk":
         sim = client.scatter(self, workers=worker)
     else:
