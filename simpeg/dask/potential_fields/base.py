@@ -71,14 +71,16 @@ def linear_operator(self):
     if client is None:
         client = Client()
 
-    if client and worker:
+    if client and worker and self.store_sensitivities != "disk":
         sim = client.scatter(self, workers=worker)
     else:
         delayed_compute = delayed(block_compute)
 
     rows = []
     count = 0
-    for count, block in enumerate(block_split):
+    for block in block_split:
+        if len(block) == 0:
+            continue
         if client and worker:
             row = client.submit(
                 block_compute,
