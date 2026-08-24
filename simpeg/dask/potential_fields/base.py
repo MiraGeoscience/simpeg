@@ -110,11 +110,11 @@ def linear_operator(self):
 
     if client and worker:
         kernel = client.gather(rows)
-    elif forward_only:
+    elif self.store_sensitivities == "disk":
+        kernel = rows
+    else:
         with ProgressBar():
             kernel = compute(rows)[0]
-    else:
-        kernel = rows
 
     if self.store_sensitivities == "disk":
         j_matrix = array.concatenate(rows, axis=0)
