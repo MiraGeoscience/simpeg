@@ -5,8 +5,6 @@ from ...potential_fields.base import BasePFSimulation as Sim
 import os
 from dask import delayed, array, compute
 from dask.diagnostics import ProgressBar
-from dask.distributed import Client
-
 
 _chunk_format = "row"
 
@@ -68,9 +66,7 @@ def linear_operator(self):
     block_split = np.array_split(self.survey.receiver_locations, n_blocks)
     client, worker = self._get_client_worker()
 
-    if client is None:
-        client = Client()
-
+    # If no distributed Client is active, fall back to the local scheduler.
     if client and worker and self.store_sensitivities != "disk":
         sim = client.scatter(self, workers=worker)
     else:
@@ -110,20 +106,19 @@ def linear_operator(self):
 
     if client and worker:
         kernel = client.gather(rows)
-    elif forward_only:
+    elif self.store_sensitivities == "disk":
+        kernel = rows
+    else:
         with ProgressBar():
             kernel = compute(rows)[0]
-    else:
-        kernel = rows
 
     if self.store_sensitivities == "disk":
         j_matrix = array.concatenate(rows, axis=0)
 
         with ProgressBar():
-            j_matrix = j_matrix.to_zarr(
-                self.sensitivity_path, return_stored=True, compute=True
-            )
-        return j_matrix
+            j_matrix.to_zarr(self.sensitivity_path, compute=True)
+
+        return array.from_zarr(self.sensitivity_path)
 
     if forward_only:
         return np.hstack(kernel)
