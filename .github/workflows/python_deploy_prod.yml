@@ -5,9 +5,6 @@ on:
     types: [published]
   workflow_dispatch:
     inputs:
-      release-tag:
-        description: 'Tag for the release to publish assets from (defaults to the tag this workflow run was triggered from)'
-        required: false
       publish-conda:
         description: 'Publish Conda package'
         required: false
@@ -22,7 +19,7 @@ on:
 permissions: {}
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.release.tag_name || github.event.inputs.release-tag || github.run_id }}
+  group: ${{ github.workflow }}-${{ github.event.release.tag_name || github.ref_name }}
   cancel-in-progress: true
 
 jobs:
@@ -32,19 +29,14 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Ensure a release tag is resolvable
+      - name: Ensure this run was triggered from a tag
+        if: ${{ github.event_name == 'workflow_dispatch' && github.ref_type != 'tag' }}
         env:
-          EVENT_NAME: ${{ github.event_name }}
-          RELEASE_TAG_INPUT: ${{ github.event.inputs.release-tag }}
           REF_TYPE: ${{ github.ref_type }}
           REF_NAME: ${{ github.ref_name }}
         run: |
-          if [ "$EVENT_NAME" = "workflow_dispatch" ] && \
-             [ -z "$RELEASE_TAG_INPUT" ] && \
-             [ "$REF_TYPE" != "tag" ]; then
-            echo "::error::No 'release-tag' input was provided, and this run was not triggered from a tag (ref_type=$REF_TYPE, ref_name=$REF_NAME). Re-run this workflow selecting the release tag under 'Use workflow from', or provide 'release-tag' manually."
-            exit 1
-          fi
+          echo "::error::This run was not triggered from a tag (ref_type=$REF_TYPE, ref_name=$REF_NAME). Re-run this workflow selecting the release tag under 'Use workflow from'."
+          exit 1
   call-workflow-conda-release:
     name: Publish production Conda package on JFrog Artifactory
     needs: validate-release-tag
@@ -54,7 +46,7 @@ jobs:
       contents: write
     with:
       virtual-repo-names: '["public-noremote-conda-prod"]'
-      release-tag: ${{ github.event.release.tag_name || github.event.inputs.release-tag || github.ref_name }}
+      release-tag: ${{ github.event.release.tag_name || github.ref_name }}
     secrets:
       JFROG_ARTIFACTORY_URL: ${{ secrets.JFROG_ARTIFACTORY_URL }}
       JFROG_ARTIFACTORY_TOKEN: ${{ secrets.JFROG_ARTIFACTORY_TOKEN }}
@@ -68,7 +60,7 @@ jobs:
     with:
       package-name: 'mira-simpeg'
       virtual-repo-names: '["public-pypi-prod", "pypi"]'
-      release-tag: ${{ github.event.release.tag_name || github.event.inputs.release-tag || github.ref_name }}
+      release-tag: ${{ github.event.release.tag_name || github.ref_name }}
     secrets:
       JFROG_ARTIFACTORY_URL: ${{ secrets.JFROG_ARTIFACTORY_URL }}
       JFROG_ARTIFACTORY_TOKEN: ${{ secrets.JFROG_ARTIFACTORY_TOKEN }}
