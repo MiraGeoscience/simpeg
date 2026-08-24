@@ -4,10 +4,8 @@ from ...potential_fields.base import BasePFSimulation as Sim
 
 import os
 from dask import delayed, array, compute
-
 from dask.diagnostics import ProgressBar
-
-import zarr
+from dask.distributed import Client
 
 
 _chunk_format = "row"
@@ -41,7 +39,7 @@ def residual(self, m, dobs, f=None):
     return self.dpred(m, f=f) - dobs
 
 
-def block_compute(sim, rows, components, j_matrix, count):
+def block_compute(sim, rows, components):
     block = []
     for row in rows:
         block.append(sim.evaluate_integral(row, components))
@@ -49,34 +47,7 @@ def block_compute(sim, rows, components, j_matrix, count):
     if sim.store_sensitivities == "forward_only":
         return np.hstack(block)
 
-    values = np.vstack(block)
-    return storage_formatter(values, count, j_matrix)
-
-
-def storage_formatter(
-    rows: np.ndarray,
-    count: int,
-    j_matrix: zarr.Array | None = None,
-):
-    """
-    Format the storage of the sensitivity matrix.
-
-    :param rows: List of dask arrays representing blocks of the sensitivity matrix.
-    :param count: Current row count offset.
-    :param j_matrix: Zarr array to store the sensitivity matrix on disk, if applicable
-
-    :return: If j_matrix is provided, returns None after storing the rows; otherwise,
-    returns the stacked rows as a NumPy array.
-    """
-
-    if isinstance(j_matrix, zarr.Array):
-        j_matrix.set_orthogonal_selection(
-            (np.arange(count, count + rows.shape[0]), slice(None)),
-            rows.astype(np.float32),
-        )
-        return None
-
-    return rows
+    return np.vstack(block)
 
 
 def linear_operator(self):
@@ -86,18 +57,8 @@ def linear_operator(self):
         n_cells *= 3
 
     if self.store_sensitivities == "disk":
-
         if os.path.exists(self.sensitivity_path):
             return array.from_zarr(self.sensitivity_path)
-
-        Jmatrix = zarr.open(
-            self.sensitivity_path,
-            mode="w",
-            shape=(self.survey.nD, n_cells),
-            chunks=(self.max_chunk_size, n_cells),
-        )
-    else:
-        Jmatrix = None
 
     n_components = len(self.survey.source_list[0].receiver_list[0].components)
     n_blocks = np.ceil(
@@ -105,10 +66,12 @@ def linear_operator(self):
         / self.max_chunk_size
     )
     block_split = np.array_split(self.survey.receiver_locations, n_blocks)
-
     client, worker = self._get_client_worker()
 
-    if client:
+    if client is None:
+        client = Client()
+
+    if client and worker and self.store_sensitivities != "disk":
         sim = client.scatter(self, workers=worker)
     else:
         delayed_compute = delayed(block_compute)
@@ -116,14 +79,14 @@ def linear_operator(self):
     rows = []
     count = 0
     for block in block_split:
-        if client:
+        if len(block) == 0:
+            continue
+        if client and worker:
             row = client.submit(
                 block_compute,
                 sim,
                 block,
                 self.survey.source_list[0].receiver_list[0].components,
-                Jmatrix,
-                count,
                 workers=worker,
             )
 
@@ -132,8 +95,6 @@ def linear_operator(self):
                 self,
                 block,
                 self.survey.source_list[0].receiver_list[0].components,
-                Jmatrix,
-                count,
             )
             row = array.from_delayed(
                 chunk,
@@ -147,14 +108,22 @@ def linear_operator(self):
         count += block.shape[0]
         rows.append(row)
 
-    if client:
+    if client and worker:
         kernel = client.gather(rows)
-    else:
+    elif forward_only:
         with ProgressBar():
             kernel = compute(rows)[0]
+    else:
+        kernel = rows
 
-    if self.store_sensitivities == "disk" and os.path.exists(self.sensitivity_path):
-        return array.from_zarr(self.sensitivity_path)
+    if self.store_sensitivities == "disk":
+        j_matrix = array.concatenate(rows, axis=0)
+
+        with ProgressBar():
+            j_matrix = j_matrix.to_zarr(
+                self.sensitivity_path, return_stored=True, compute=True
+            )
+        return j_matrix
 
     if forward_only:
         return np.hstack(kernel)
