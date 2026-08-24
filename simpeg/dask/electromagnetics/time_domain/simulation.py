@@ -464,7 +464,6 @@ def compute_rows(
     """
     Compute the rows of the sensitivity matrix for a given source and receiver.
     """
-    rows = []
     colm_count = 0
     for address, ind_array in blocks[block_ind]:
         # for (address, ind_array), field_derivs in zip(chunks, ATinv_df_duT_v):
@@ -473,14 +472,6 @@ def compute_rows(
 
         n_rec = len(ind_array[0])
         local_ind = np.arange(n_rec)[time_check]
-
-        if len(local_ind) < 1:
-            row_block = np.zeros(
-                (len(ind_array[1]), simulation.model.size), dtype=np.float32
-            )
-            rows.append(row_block)
-            continue
-
         dAsubdiagT_dm_v = simulation.getAsubdiagDeriv(
             tInd,
             fields[:, address[0], tInd],
