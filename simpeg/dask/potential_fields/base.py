@@ -120,10 +120,9 @@ def linear_operator(self):
         j_matrix = array.concatenate(rows, axis=0)
 
         with ProgressBar():
-            j_matrix = j_matrix.to_zarr(
-                self.sensitivity_path, return_stored=True, compute=True
-            )
-        return j_matrix
+            j_matrix.to_zarr(self.sensitivity_path, compute=True)
+
+        return array.from_zarr(self.sensitivity_path)
 
     if forward_only:
         return np.hstack(kernel)
