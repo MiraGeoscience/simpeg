@@ -26,17 +26,23 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Fail-fast guard, so it fails here rather than in the downstream jobs.
   validate-release-tag:
     name: Validate release tag
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
       - name: Ensure a release tag is resolvable
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          RELEASE_TAG_INPUT: ${{ github.event.inputs.release-tag }}
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && \
-             [ -z "${{ github.event.inputs.release-tag }}" ] && \
-             [ "${{ github.ref_type }}" != "tag" ]; then
-            echo "::error::No 'release-tag' input was provided, and this run was not triggered from a tag (ref_type=${{ github.ref_type }}, ref_name=${{ github.ref_name }}). Re-run this workflow selecting the release tag under 'Use workflow from', or provide 'release-tag' manually."
+          if [ "$EVENT_NAME" = "workflow_dispatch" ] && \
+             [ -z "$RELEASE_TAG_INPUT" ] && \
+             [ "$REF_TYPE" != "tag" ]; then
+            echo "::error::No 'release-tag' input was provided, and this run was not triggered from a tag (ref_type=$REF_TYPE, ref_name=$REF_NAME). Re-run this workflow selecting the release tag under 'Use workflow from', or provide 'release-tag' manually."
             exit 1
           fi
   call-workflow-conda-release:
