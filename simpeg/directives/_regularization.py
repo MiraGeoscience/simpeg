@@ -5,6 +5,7 @@ import warnings
 import numpy as np
 from dataclasses import dataclass
 
+from ..objective_function import BaseObjectiveFunction
 from ..maps import Projection
 from ._directives import InversionDirective, UpdatePreconditioner, BetaSchedule
 from ..regularization import (
@@ -497,6 +498,71 @@ class SphericalUnitsWeights(InversionDirective):
                     continue
 
                 obj.set_weights(angle_scale=np.ones_like(amplitude) * max_p / np.pi)
+
+
+class HeatingSchedule(InversionDirective):
+    """
+    Directive to progressively increase the value of a given parameter.
+
+    Parameters
+    ----------
+    amplitude: Projection
+        Map to the model parameters for the amplitude of the vector
+    angles: list[WeightedLeastSquares]
+        List of WeightedLeastSquares for the angles.
+    verbose: bool
+        Print information to the screen.
+    """
+
+    def __init__(
+        self,
+        objfct: BaseObjectiveFunction,
+        parameter: str,
+        factor: float = 2.0,
+        max_value: float | None = None,
+        min_value: float | None = None,
+        verbose: bool = True,
+        **kwargs,
+    ):
+
+        if not getattr(objfct, parameter, None):
+            raise TypeError(
+                f"The provided object of type '{type(objfct)}' does not have a '{parameter}' attribute."
+            )
+
+        self.objfct = objfct
+        self.parameter = parameter
+        self.factor = factor
+        self.max_value = max_value
+        self.min_value = min_value
+
+        super().__init__(
+            verbose=verbose,
+            **kwargs,
+        )
+
+    def initialize(self):
+        self.update_scaling()
+
+    def endIter(self):
+        self.update_scaling()
+
+    def update_scaling(self):
+        """
+        Add an 'angle_scale' to the list of weights on the angle regularization for the
+        different block of models to account for units of radian and SI.
+        """
+        value = getattr(self.objfct, self.parameter)
+        new_value = value * self.factor
+
+        if self.max_value is not None:
+            new_value = min(new_value, self.max_value)
+
+        if self.min_value is not None:
+            new_value = max(new_value, self.min_value)
+
+        print(new_value)
+        setattr(self.objfct, self.parameter, new_value)
 
 
 @deprecate_class(removal_version="0.24.0", error=True)
