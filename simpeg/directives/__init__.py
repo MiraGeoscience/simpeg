@@ -110,6 +110,7 @@ from ._directives import (
     SaveModelEveryIteration,
     SaveOutputEveryIteration,
     SaveOutputDictEveryIteration,
+    ScaleMisfitsChannels,
     UpdatePreconditioner,
     Update_Wj,
     AlphasSmoothEstimate_ByEig,
@@ -132,7 +133,7 @@ from ._save_geoh5 import (
     SaveSensitivityGeoH5,
 )
 
-from ._regularization import UpdateIRLS, SphericalUnitsWeights
+from ._regularization import HeatingSchedule, UpdateIRLS, SphericalUnitsWeights
 
 from ._vector_models import (
     VectorInversion,

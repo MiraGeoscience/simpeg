@@ -2946,3 +2946,53 @@ def compute_JtJdiags(data_misfit, m):
             jtj_diag += multiplier * diag
 
     return np.asarray(jtj_diag)
+
+
+class ScaleMisfitsChannels(InversionDirective):
+    """
+    Directive to scale the uncertainties of different data components.
+
+    Parameters
+    ----------
+    amplitude: Projection
+        Map to the model parameters for the amplitude of the vector
+    angles: list[WeightedLeastSquares]
+        List of WeightedLeastSquares for the angles.
+    verbose: bool
+        Print information to the screen.
+    """
+
+    def __init__(
+        self,
+        misfits,
+        slices,
+        verbose: bool = True,
+        **kwargs,
+    ):
+        self.misfits = misfits
+        self.slices = slices
+
+        super().__init__(
+            verbose=verbose,
+            **kwargs,
+        )
+
+    def initialize(self):
+        self.update_scaling()
+
+    def endIter(self):
+        self.update_scaling()
+
+    def update_scaling(self):
+        """
+        Add an 'angle_scale' to the list of weights on the angle regularization for the
+        different block of models to account for units of radian and SI.
+        """
+        # for misfit in self.misfits:
+        #     for inds in self.slices:
+        #         residuals = misfit.residuals[inds]
+        #         phi_d = np.vdot(residuals, residuals)
+        #         chi_factors.append(phi_d / len(residuals))
+        #
+        #     chi_factors = np.hstack(chi_factors)
+        pass
