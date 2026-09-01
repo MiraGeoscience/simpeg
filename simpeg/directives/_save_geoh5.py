@@ -18,6 +18,8 @@ from geoh5py.objects import ObjectBase
 from geoh5py.ui_json.utils import fetch_active_workspace
 from simpeg.directives._directives import compute_JtJdiags
 
+from ..utils import deprecate_class
+
 
 class BaseSaveGeoH5(InversionDirective, ABC):
     """
@@ -536,9 +538,9 @@ class SaveModelGroup(SavePropertyGroup):
         return channel_name, component
 
 
-class SaveLPModelGroup(SavePropertyGroup):
+class SaveLPIterationsGroup(SavePropertyGroup):
     """
-    Save the model as a property group in the geoh5 file
+    Group data or model as a property group for the L2 and LP iterations.
     """
 
     def __init__(
@@ -562,9 +564,9 @@ class SaveLPModelGroup(SavePropertyGroup):
         channel_name, base_name = super().get_names(component, channel, iteration)
 
         if self.irls_directive.metrics.irls_iteration_count == 0:
-            base_name = "L2 models"
+            base_name = "L2 iterations"
         else:
-            base_name = "LP models"
+            base_name = "LP iterations"
 
         return channel_name, base_name
 
@@ -636,3 +638,8 @@ class SavePGIModel(SaveArrayGeoH5):
             #             for ind, mean in zip(self.unit_map, means[:, ii])
             #         },
             #     )
+
+
+@deprecate_class(removal_version="0.26.0", error=False)
+class SaveLPModelGroup(SaveLPIterationsGroup):
+    pass
