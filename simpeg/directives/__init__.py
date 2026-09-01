@@ -134,7 +134,7 @@ from ._save_geoh5 import (
     SaveSensitivityGeoH5,
 )
 
-from ._regularization import HeatingSchedule, UpdateIRLS, SphericalUnitsWeights
+from ._regularization import UpdateIRLS, SphericalUnitsWeights
 
 from ._vector_models import (
     VectorInversion,

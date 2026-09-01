@@ -2965,12 +2965,14 @@ class ScaleMisfitsChannels(InversionDirective):
     def __init__(
         self,
         misfits,
-        slices,
+        channels,
+        components=None,
         verbose: bool = True,
         **kwargs,
     ):
         self.misfits = misfits
-        self.slices = slices
+        self.channels = channels
+        self.components = components
 
         super().__init__(
             verbose=verbose,
@@ -2988,11 +2990,37 @@ class ScaleMisfitsChannels(InversionDirective):
         Add an 'angle_scale' to the list of weights on the angle regularization for the
         different block of models to account for units of radian and SI.
         """
-        # for misfit in self.misfits:
-        #     for inds in self.slices:
-        #         residuals = misfit.residuals[inds]
-        #         phi_d = np.vdot(residuals, residuals)
-        #         chi_factors.append(phi_d / len(residuals))
-        #
-        #     chi_factors = np.hstack(chi_factors)
-        pass
+        if (residuals := getattr(self.invProb, "residuals", None)) is None:
+            return
+
+        print("Update scaling")
+        for residual, dmisfit in zip(residuals, self.invProb.dmisfit.objfcts):
+            if dmisfit in self.misfits:
+                n_locations = len(residual) // (
+                    len(self.channels) * len(self.components)
+                )
+                ordering = dmisfit.simulation.simulations[0].survey.ordering
+
+                _, indices = np.unique(ordering[:, 2], return_inverse=True)
+                res_array = np.empty(
+                    (len(self.channels), len(self.components), n_locations)
+                )
+                res_array[ordering[:, 0], ordering[:, 1], indices] = residual
+
+                # Compute chi factor per component and channel
+                chi_facts = (res_array**2.0).sum(axis=2) / n_locations
+                norm_chi = chi_facts / chi_facts.max()
+                scaling = (
+                    norm_chi * (np.linalg.norm(chi_facts) / np.linalg.norm(norm_chi))
+                ) ** 0.5
+
+                flatten_order = np.empty(
+                    (len(self.channels), len(self.components), n_locations), dtype=int
+                )
+                flatten_order[ordering[:, 0], ordering[:, 1], indices] = np.arange(
+                    len(residual)
+                )
+
+                res_array[:] = scaling[:, :, None]
+
+                dmisfit.W.data[flatten_order.flatten()] /= res_array.flatten()
