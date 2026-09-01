@@ -18,6 +18,8 @@ from geoh5py.objects import ObjectBase
 from geoh5py.ui_json.utils import fetch_active_workspace
 from simpeg.directives._directives import compute_JtJdiags
 
+from ..utils import deprecate_class
+
 
 class BaseSaveGeoH5(InversionDirective, ABC):
     """
@@ -636,3 +638,8 @@ class SavePGIModel(SaveArrayGeoH5):
             #             for ind, mean in zip(self.unit_map, means[:, ii])
             #         },
             #     )
+
+
+@deprecate_class(removal_version="0.26.0", error=False)
+class SaveLPModelGroup(SaveLPIterationsGroup):
+    pass
