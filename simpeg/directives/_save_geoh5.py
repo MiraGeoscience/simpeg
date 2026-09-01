@@ -536,7 +536,7 @@ class SaveModelGroup(SavePropertyGroup):
         return channel_name, component
 
 
-class SaveLPModelGroup(SavePropertyGroup):
+class SaveLPIterationsGroup(SavePropertyGroup):
     """
     Save the model as a property group in the geoh5 file
     """
@@ -562,9 +562,9 @@ class SaveLPModelGroup(SavePropertyGroup):
         channel_name, base_name = super().get_names(component, channel, iteration)
 
         if self.irls_directive.metrics.irls_iteration_count == 0:
-            base_name = "L2 models"
+            base_name = "L2 iterations"
         else:
-            base_name = "LP models"
+            base_name = "LP iterations"
 
         return channel_name, base_name
 
