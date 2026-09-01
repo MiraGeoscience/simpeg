@@ -538,7 +538,7 @@ class SaveModelGroup(SavePropertyGroup):
 
 class SaveLPIterationsGroup(SavePropertyGroup):
     """
-    Save the model as a property group in the geoh5 file
+    Group data or model as a property group for the L2 and LP iterations.
     """
 
     def __init__(
