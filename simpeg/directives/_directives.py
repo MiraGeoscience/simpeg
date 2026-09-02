@@ -1,6 +1,7 @@
 from abc import ABCMeta, abstractmethod
 from typing import Iterable, TYPE_CHECKING
 
+from dask.distributed import get_client, Future
 from datetime import datetime
 import pathlib
 import numpy as np
@@ -2965,62 +2966,55 @@ class ScaleMisfitsChannels(InversionDirective):
     def __init__(
         self,
         misfits,
-        channels,
-        components=None,
-        verbose: bool = True,
+        update_every_iteration=False,
         **kwargs,
     ):
         self.misfits = misfits
-        self.channels = channels
-        self.components = components
+        self.update_every_iteration = update_every_iteration
 
         super().__init__(
-            verbose=verbose,
             **kwargs,
         )
 
     def initialize(self):
+        """Initialize inversion parameter(s) according to directive."""
+
+        self.weights = []
+        for dmisfit in self.misfits:
+            if isinstance(dmisfit, Future):
+                client = get_client()
+                future = client.submit(self._get_weights, dmisfit)
+                self.weights.append(future.result())
+            else:
+                self.weights.append(self._get_weights(dmisfit))
+
         self.update_scaling()
 
     def endIter(self):
-        self.update_scaling()
+        """Update inversion parameter(s) according to directive at end of iteration."""
+        if self.update_every_iteration:
+            self.update_scaling()
 
     def update_scaling(self):
         """
         Add an 'angle_scale' to the list of weights on the angle regularization for the
         different block of models to account for units of radian and SI.
         """
-        if (residuals := getattr(self.invProb, "residuals", None)) is None:
-            return
+        for weights, dmisfit in zip(self.weights, self.misfits, strict=True):
+            if isinstance(dmisfit, Future):
+                client = get_client()
+                future = client.submit(self._set_weights, dmisfit, weights)
+                future.result()
+            else:
+                self._set_weights(dmisfit, weights)
 
-        print("Update scaling")
-        for residual, dmisfit in zip(residuals, self.invProb.dmisfit.objfcts):
-            if dmisfit in self.misfits:
-                n_locations = len(residual) // (
-                    len(self.channels) * len(self.components)
-                )
-                ordering = dmisfit.simulation.simulations[0].survey.ordering
+    @staticmethod
+    def _get_weights(objfct):
+        return objfct.W.data.copy()
 
-                _, indices = np.unique(ordering[:, 2], return_inverse=True)
-                res_array = np.empty(
-                    (len(self.channels), len(self.components), n_locations)
-                )
-                res_array[ordering[:, 0], ordering[:, 1], indices] = residual
-
-                # Compute chi factor per component and channel
-                chi_facts = (res_array**2.0).sum(axis=2) / n_locations
-                norm_chi = chi_facts / chi_facts.max()
-                scaling = (
-                    norm_chi * (np.linalg.norm(chi_facts) / np.linalg.norm(norm_chi))
-                ) ** 0.5
-
-                flatten_order = np.empty(
-                    (len(self.channels), len(self.components), n_locations), dtype=int
-                )
-                flatten_order[ordering[:, 0], ordering[:, 1], indices] = np.arange(
-                    len(residual)
-                )
-
-                res_array[:] = scaling[:, :, None]
-
-                dmisfit.W.data[flatten_order.flatten()] /= res_array.flatten()
+    @staticmethod
+    def _set_weights(dmisfit, weights):
+        jmatrix = dmisfit.simulation.simulations[0].Jmatrix
+        scaling = np.asarray(np.einsum("ij,ij->i", jmatrix, jmatrix))
+        scaling /= scaling.max()
+        dmisfit.W.data = weights * scaling**0.5
