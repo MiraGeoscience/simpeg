@@ -41,7 +41,7 @@ jobs:
     name: Publish production Conda package on JFrog Artifactory
     needs: validate-release-tag
     if: ${{ github.event_name == 'release' || github.event.inputs.publish-conda == 'true' }}
-    uses: MiraGeoscience/CI-tools/.github/workflows/reusable-python-release_conda_assets.yml@7241532854727d993872b67fc761139b8438615b # v3.12.0
+    uses: MiraGeoscience/CI-tools/.github/workflows/reusable-python-release_conda_assets.yml@DEVOPS-1154
     permissions:
       contents: write
     with:
