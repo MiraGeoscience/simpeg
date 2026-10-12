@@ -232,7 +232,7 @@ class DistributedComboMisfits(ComboObjectiveFunction):
         values = []
         count = 0
         for futures in self._workloads:
-            for future, worker in zip(futures, self._workers, strict=True):
+            for future, worker in zip(futures, self._workers, strict=False):
 
                 if self.multipliers[count] == 0.0:
                     continue
@@ -317,7 +317,7 @@ class DistributedComboMisfits(ComboObjectiveFunction):
 
         for futures in self._workloads:
             future_deriv = []
-            for future, worker in zip(futures, self._workers, strict=True):
+            for future, worker in zip(futures, self._workers, strict=False):
                 if self.multipliers[count] == 0.0:  # don't evaluate the fct
                     continue
 
@@ -359,7 +359,7 @@ class DistributedComboMisfits(ComboObjectiveFunction):
         for futures in self._workloads:
 
             future_derivs = []
-            for future, worker in zip(futures, self._workers, strict=True):
+            for future, worker in zip(futures, self._workers, strict=False):
                 if self.multipliers[count] == 0.0:  # don't evaluate the fct
                     continue
 
@@ -393,7 +393,7 @@ class DistributedComboMisfits(ComboObjectiveFunction):
         residuals = []
         for futures in self._workloads:
             future_preds = []
-            for future, worker in zip(futures, self._workers, strict=True):
+            for future, worker in zip(futures, self._workers, strict=False):
                 future_preds.append(
                     client.submit(
                         _calc_dpred,
@@ -431,7 +431,7 @@ class DistributedComboMisfits(ComboObjectiveFunction):
             for futures in self._workloads:
                 work = []
 
-                for future, worker in zip(futures, self._workers, strict=True):
+                for future, worker in zip(futures, self._workers, strict=False):
                     work.append(
                         client.submit(
                             _get_jtj_diag,
@@ -464,7 +464,7 @@ class DistributedComboMisfits(ComboObjectiveFunction):
 
         for futures in self._workloads:
             f.append([])
-            for future, worker in zip(futures, self._workers, strict=True):
+            for future, worker in zip(futures, self._workers, strict=False):
                 f[-1].append(
                     client.submit(
                         _calc_fields,
@@ -574,7 +574,7 @@ class DistributedComboMisfits(ComboObjectiveFunction):
 
         for futures in self._workloads:
             future_residuals = []
-            for future, worker in zip(futures, self._workers, strict=True):
+            for future, worker in zip(futures, self._workers, strict=False):
                 future_residuals.append(
                     client.submit(
                         _calc_residual,
