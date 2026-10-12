@@ -498,7 +498,7 @@ class DistributedComboMisfits(ComboObjectiveFunction):
 
         stores = []
         for futures in self._workloads:
-            for future, worker in zip(futures, self._workers, strict=True):
+            for future, worker in zip(futures, self._workers, strict=False):
                 stores.append(
                     client.submit(
                         _store_model,
