@@ -4,8 +4,9 @@ from ....electromagnetics.time_domain.simulation import BaseTDEMSimulation as Si
 
 from ....utils import Zero
 from ...simulation import getJtJdiag, Jvec, Jtvec, Jmatrix
-
+from pathlib import Path
 import numpy as np
+import pickle
 import scipy.sparse as sp
 from dask import array, delayed, compute
 import zarr
@@ -88,6 +89,14 @@ def compute_J(self, m, f=None):
         f, Ainv = self.fields(m=m, return_Ainv=True)
 
     client, worker = self._get_client_worker()
+
+    if client:
+        sim = self.sensitivity_path
+
+    else:
+        delayed_compute_rows = delayed(compute_rows)
+        sim = self
+
     ftype = self._fieldType + "Solution"
     n_cells = m.size
     simulation_times = np.r_[0, np.cumsum(self.time_steps)] + self.t0
@@ -127,14 +136,11 @@ def compute_J(self, m, f=None):
         self, f, blocks, Jmatrix, fields_array.shape
     )
 
-    ATinv_df_duT_v = [[] for _ in blocks]
-
     if client:
         fields_array = client.scatter(fields_array, workers=worker)
-        sim = client.scatter(self, workers=worker)
-    else:
-        delayed_compute_rows = delayed(compute_rows)
-        sim = self
+
+    ATinv_df_duT_v = [[] for _ in blocks]
+
     for tInd, dt in zip(reversed(range(self.nT)), reversed(self.time_steps)):
 
         AdiagTinv = Ainv[dt]
@@ -172,6 +178,7 @@ def compute_J(self, m, f=None):
                     client.submit(
                         compute_rows,
                         sim,
+                        m,
                         tInd,
                         block_ind,
                         blocks,
@@ -187,6 +194,7 @@ def compute_J(self, m, f=None):
                     array.from_delayed(
                         delayed_compute_rows(
                             sim,
+                            m,
                             tInd,
                             block_ind,
                             blocks,
@@ -453,6 +461,7 @@ def deriv_block(ATinv_df_duT_v, Asubdiag, local_ind, field_derivs):
 
 def compute_rows(
     simulation,
+    model,
     tInd,
     block_ind,
     blocks,
@@ -467,6 +476,12 @@ def compute_rows(
     colm_count = 0
     for address, ind_array in blocks[block_ind]:
         # for (address, ind_array), field_derivs in zip(chunks, ATinv_df_duT_v):
+
+        if isinstance(simulation, str | Path):
+            with open(simulation, "rb") as file:
+                simulation = pickle.load(file)
+                simulation.model = model
+
         src = simulation.survey.source_list[address[0]]
         time_check = np.kron(time_mask, np.ones(ind_array[2], dtype=bool))[ind_array[0]]
 
