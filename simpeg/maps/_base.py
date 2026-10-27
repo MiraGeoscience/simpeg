@@ -7,9 +7,9 @@ import discretize
 import numpy as np
 import scipy.sparse as sp
 from scipy.sparse import csr_matrix as csr
-from scipy.sparse import speye, sdiag
+
 from discretize.tests import check_derivative
-from discretize.utils import Zero, Identity, mkvc, volume_average
+from discretize.utils import Zero, Identity, mkvc, volume_average, speye, sdiag
 import uuid
 
 from ..utils import (
