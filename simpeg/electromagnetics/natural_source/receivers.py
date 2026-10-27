@@ -1573,43 +1573,51 @@ def _eval_cross_product_amplitude_deriv(
 
     # ADJOINT
     if adjoint:
-
-        # J_T * v = d_top_T * a_v + d_bot_T * b
-        a_v = factor * v / bot  # term 1
-        b_v = -factor * top * v / bot**2  # term 2
-
-        a_v = np.repeat(mkvc(a_v, n_dims=2), 2, axis=-1)
-        b_v = np.repeat(mkvc(b_v, n_dims=2), 2, axis=-1)
+        a_v = factor * np.c_[v] / bot[:, None]  # term 1
+        b_v = np.c_[v] * (-factor * top / (bot**2))[:, None]  # term 2
 
         # derivatives for det(HH*)
-        px = (
+        px = np.einsum(
+            "ij,ik->ijk",
+            a_v,
             np.c_[
                 det_h12.conjugate() * hy[:, 1] + det_h13.conjugate() * hz[:, 1],
                 -det_h12.conjugate() * hy[:, 0] - det_h13.conjugate() * hz[:, 0],
-            ]
-            * a_v
-        )
-        py = (
+            ],
+        ).reshape((hx.shape[0], -1))
+        py = np.einsum(
+            "ij,ik->ijk",
+            a_v,
             np.c_[
                 -det_h12.conjugate() * hx[:, 1] + det_h23.conjugate() * hz[:, 1],
                 det_h12.conjugate() * hx[:, 0] - det_h23.conjugate() * hz[:, 0],
-            ]
-            * a_v
-        )
-        pz = (
+            ],
+        ).reshape((hy.shape[0], -1))
+        pz = np.einsum(
+            "ij,ik->ijk",
+            a_v,
             np.c_[
                 -det_h13.conjugate() * hx[:, 1] - det_h23.conjugate() * hy[:, 1],
                 det_h13.conjugate() * hx[:, 0] + det_h23.conjugate() * hy[:, 0],
-            ]
-            * a_v
-        )
+            ],
+        ).reshape((hz.shape[0], -1))
 
         # derivatives for det(BB*)
-        qx = np.c_[det_b.conjugate() * by[:, 1], -det_b.conjugate() * by[:, 0]] * b_v
-        qy = np.c_[-det_b.conjugate() * bx[:, 1], det_b.conjugate() * bx[:, 0]] * b_v
+        qx = np.einsum(
+            "ij,ik->ijk",
+            b_v,
+            np.c_[det_b.conjugate() * by[:, 1], -det_b.conjugate() * by[:, 0]],
+        ).reshape((bx.shape[0], -1))
+        qy = np.einsum(
+            "ij,ik->ijk",
+            b_v,
+            np.c_[-det_b.conjugate() * bx[:, 1], det_b.conjugate() * bx[:, 0]],
+        ).reshape((by.shape[0], -1))
 
-        h_v = 2 * (Phx.T @ px + Phy.T @ py + Phz.T @ pz)
-        b_v = 2 * (Pbx.T @ qx + Pby.T @ qy)
+        h_v = 2 * (
+            Phx.T @ csr_matrix(px) + Phy.T @ csr_matrix(py) + Phz.T @ csr_matrix(pz)
+        )
+        b_v = 2 * (Pbx.T @ csr_matrix(qx) + Pby.T @ csr_matrix(qy))
 
         match receiver._base_type:
             case "magnetic":
