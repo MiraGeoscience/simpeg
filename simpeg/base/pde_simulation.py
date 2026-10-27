@@ -10,7 +10,7 @@ import discretize.base
 from ..simulation import BaseSimulation
 from .. import props
 from scipy.constants import mu_0
-
+from scipy.sparse import spmatrix, diags
 from ..utils import validate_type, get_default_solver, get_logger, PerformanceWarning
 
 
@@ -20,6 +20,9 @@ def _inner_mat_mul_op(M, u, v=None, adjoint=False):
 
     if sp.issparse(M):
         if v is not None:
+            if isinstance(v, spmatrix) and u.ndim == 1:
+                return M.T @ (diags(u) @ v)
+
             if v.ndim > 1:
                 v = np.squeeze(v)
             if u.ndim > 1:
