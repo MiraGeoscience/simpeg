@@ -1573,7 +1573,7 @@ def _eval_cross_product_amplitude_deriv(
 
     # ADJOINT
     if adjoint:
-        a_v = factor * np.c_[v] / bot[:, None]  # term 1
+        a_v = np.c_[v] / (factor * bot)[:, None]  # term 1
         b_v = np.c_[v] * (-factor * top / (bot**2))[:, None]  # term 2
 
         # derivatives for det(HH*)
