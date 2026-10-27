@@ -17,3 +17,4 @@ rules:
         reviewdog/action-flake8: ref-pin
         # Allow to use tags to pin MiraGeoscience actions.
         MiraGeoscience/*: ref-pin
+

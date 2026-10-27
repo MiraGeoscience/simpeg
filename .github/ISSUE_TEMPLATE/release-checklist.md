@@ -40,8 +40,8 @@ assignees: ""
 - [ ] Copy the content of `notes.rst` to a new file `docs/content/release/<version>-notes.rst`.
 - [ ] Edit the release notes file, following the template below and the previous release notes.
 - [ ] Add the new release notes to the list in `docs/content/release/index.rst`.
-- [ ] **Open a PR** with the new release notes.
-- [ ] Manually view the built documentation by downloading the Azure `html_doc` artifact and check for formatting and errors.
+- [ ] Create a new branch called `changelog-v<VERSION_NUMBER>` and commit the
+  changes in `docs/content/release`
 
 
 <details>
@@ -97,6 +97,7 @@ Pull Requests
 =============
 
 ..
+
     paste list of PRs that were copied to `notes.rst`
 ```
 
@@ -116,8 +117,28 @@ Edit the `docs/_static/versions.json` file and:
 - [ ] Double-check the changes.
 - [ ] Commit the changes to the same branch.
 
-### Merge the PR
+### Optionally: Python version compatibility
 
+If this releases drops support of an old Python version:
+
+- [ ] Open the `docs/content/user-guide/getting-started/version-compatibility.rst` file and go to the `Supported Python versions` section.
+- [ ] Make sure that the current latest version is listed there along with the corresponding Python version that this release will drop support for.
+
+> [!TIP]
+> For example, if the latest release to the date is `v0.25.2`, we are about to release `v0.26.0`, and we are dropping support for Python 3.11, then we need to identify `v0.25.0` as the last version to support Python 3.11:
+>
+> ```rst
+>   * - **Python version**
+>     - **Last compatible release**
+>   ...
+>   * - 3.11
+>     - 0.25.2
+> ```
+
+### Create a PR and merge it
+
+- [ ] Open a PR merging the new branch into `main`.
+- [ ] Manually view the built documentation by downloading the Azure `html_doc` artifact and check for formatting and errors.
 - [ ] **Merge that PR.**
 
 ## Make the new release
@@ -134,7 +155,7 @@ After publishing the release, Azure will automatically push the new version to P
 
 After they finish:
 
-- [ ] Check the new version is available in PyPI: https://pypi.org/project/SimPEG/ .
+- [ ] Check the new version is available in PyPI: https://pypi.org/project/simpeg
 - [ ] Check the new documentation is online: https://docs.simpeg.xyz
 
 For the new version to be available in conda-forge, we need to update the [conda-forge/simpeg-feedstock](https://github.com/conda-forge/simpeg-feedstock) repository. Within the same day of the release a new PR will be automatically open in that repository. So:
