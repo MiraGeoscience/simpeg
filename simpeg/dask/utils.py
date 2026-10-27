@@ -1,4 +1,7 @@
 import numpy as np
+from simpeg.utils import mat_utils
+from simpeg.directives import _directives
+from simpeg.typing import RandomSeed
 
 
 def compute_chunk_sizes(M, N, target_chunk_size):
@@ -86,3 +89,36 @@ def get_parallel_blocks(
         ]
 
     return blocks
+
+
+def dask_eigenvalue_by_power_iteration(
+    combo_objfct,
+    model,
+    n_pw_iter=4,
+    fields_list=None,
+    random_seed: RandomSeed | None = None,
+):
+    """
+    Estimate largest eigenvalue in absolute value using power iteration.
+
+    Overloaded function used by simpeg.directives._directives.BetaEstimate_ByEig class to
+    use dask for parallelization.
+    """
+    rng = np.random.default_rng(seed=random_seed)
+
+    # Initial guess for eigen-vector
+    x0 = rng.random(size=model.shape)
+    x0 = x0 / np.linalg.norm(x0)
+
+    # Power iteration: estimate eigenvector
+    for _ in range(n_pw_iter):
+        x1 = combo_objfct.deriv2(model, v=x0)
+        x0 = x1 / np.linalg.norm(x1)
+
+    eigenvalue = x0.dot(combo_objfct.deriv2(model, v=x0))
+
+    return eigenvalue
+
+
+mat_utils.eigenvalue_by_power_iteration = dask_eigenvalue_by_power_iteration
+_directives.eigenvalue_by_power_iteration = dask_eigenvalue_by_power_iteration
