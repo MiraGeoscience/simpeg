@@ -837,8 +837,8 @@ class Tipper(BaseNaturalSourceRx):
                     "ij,ik->ijk", gtop_v, np.c_[-h[:, 1], h[:, 0]]
                 ).reshape((h.shape[0], -1))
                 gh_v = np.einsum(
-                    "ij,ik->ijk", gtop_v, np.c_[hz[:, 1], -hz[:, 0]]
-                ).reshape((hz.shape[0], -1))
+                    "ij,ik->ijk", gtop_v, np.c_[ho[:, 1], -ho[:, 0]]
+                ).reshape((ho.shape[0], -1))
                 if self.orientation[1] == "x":
                     ghy_v -= gh_v
                 else:
@@ -853,7 +853,7 @@ class Tipper(BaseNaturalSourceRx):
                 gh_v = (
                     Phx.T @ csr_matrix(ghx_v)
                     + Phy.T @ csr_matrix(ghy_v)
-                    + Phz.T @ csr_matrix(gho_v)
+                    + Pho.T @ csr_matrix(gho_v)
                 )
 
             return f._hDeriv(src, None, gh_v, adjoint=True)
