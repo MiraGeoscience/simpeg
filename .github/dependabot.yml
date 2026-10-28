@@ -5,7 +5,6 @@
 
 version: 2
 updates:
-<<<<<<< HEAD
   - package-ecosystem: "github-actions"
     directory: "/"
     target-branch: "develop"
@@ -32,10 +31,3 @@ updates:
       pre-commit-hooks:
         patterns:
           - "*"
-=======
-
-  - package-ecosystem: "github-actions"
-    directory: "/"
-    schedule:
-      interval: "weekly"
->>>>>>> main
