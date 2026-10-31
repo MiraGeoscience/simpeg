@@ -20,8 +20,8 @@ class FieldsFDEM(Fields):
     simulation : .BaseFDEMSimulation
         The FDEM simulation object used to compute the discrete field solution.
 
-    Example
-    -------
+    Examples
+    --------
     We want to access the fields for a discrete solution with :math:`\mathbf{e}` discretized
     to edges and :math:`\mathbf{b}` discretized to faces. To extract the fields for all sources:
 
@@ -347,8 +347,8 @@ class Fields3DElectricField(FieldsFDEM):
     simulation : .frequency_domain.Simulation3DElectricField
         The FDEM simulation object associated with the fields.
 
-    Example
-    -------
+    Examples
+    --------
     The ``Fields3DElectricField`` object stores the total electric field solution
     on mesh edges. To extract the discrete electric fields and magnetic flux
     densities for all sources:
@@ -519,6 +519,7 @@ class Fields3DElectricField(FieldsFDEM):
             if not isinstance(s_m, Zero) and s_m.ndim == 1:
                 s_m = s_m[:, None]
             b[:, i:ii] = b[:, i:ii] + 1.0 / (1j * omega(src.frequency)) * s_m
+            i = ii
         return b
 
     def _bDeriv_u(self, src, du_dm_v, adjoint=False):
@@ -713,8 +714,8 @@ class Fields3DMagneticFluxDensity(FieldsFDEM):
     simulation : .frequency_domain.Simulation3DMagneticFluxDensity
         The FDEM simulation object associated with the fields.
 
-    Example
-    -------
+    Examples
+    --------
     The ``Fields3DMagneticFluxDensity`` object stores the total magnetic flux density solution
     on mesh faces. To extract the discrete electric fields and magnetic flux
     densities for all sources:
@@ -1081,8 +1082,8 @@ class Fields3DCurrentDensity(FieldsFDEM):
     simulation : .frequency_domain.Simulation3DCurrentDensity
         The FDEM simulation object associated with the fields.
 
-    Example
-    -------
+    Examples
+    --------
     The ``Fields3DCurrentDensity`` object stores the total current density solution
     on mesh faces. To extract the discrete current density and magnetic field:
 
@@ -1510,8 +1511,8 @@ class Fields3DMagneticField(FieldsFDEM):
     simulation : .frequency_domain.Simulation3DMagneticField
         The FDEM simulation object associated with the fields.
 
-    Example
-    -------
+    Examples
+    --------
     The ``Fields3DMagneticField`` object stores the total magnetic field solution
     on mesh edges. To extract the discrete current density and magnetic field:
 

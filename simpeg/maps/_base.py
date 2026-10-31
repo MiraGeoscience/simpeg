@@ -7,8 +7,9 @@ import discretize
 import numpy as np
 import scipy.sparse as sp
 from scipy.sparse import csr_matrix as csr
+
 from discretize.tests import check_derivative
-from discretize.utils import Zero, Identity, mkvc, speye, sdiag
+from discretize.utils import Zero, Identity, mkvc, volume_average, speye, sdiag
 import uuid
 
 from ..utils import (
@@ -354,6 +355,55 @@ class IdentityMap:
         return True
 
 
+def _shapes_compatible(shape_a, shape_b):
+    r"""Check whether two mapping shapes agree, treating ``'*'`` as a wildcard."""
+    return all(
+        x == "*" or y == "*" or x == y for x, y in zip(shape_a, shape_b, strict=True)
+    )
+
+
+def _resolve_combo_shape(maps):
+    r"""Infer the overall shape of a chain of mappings.
+
+    ``maps`` must be ordered the same way they are stored on a
+    :class:`ComboMap`: from the mapping applied last to the mapping
+    applied first. A mapping with shape (``*``, ``*``) can act on a
+    vector of any length, so when a concrete dimension is known on one
+    side of such a mapping (because a neighboring mapping fixes it),
+    that dimension is propagated through it.
+
+    Returns
+    -------
+    (2) tuple of int or ``*``
+        The resolved (output, input) shape of the combined mapping.
+    """
+    n = len(maps)
+    # junctions[0] is the output size of the combination; junctions[n] is
+    # the input size (nP); junctions[i] in between is the size flowing
+    # between maps[i] (applied earlier) and maps[i - 1] (applied later).
+    junctions = [None] * (n + 1)
+    junctions[0] = maps[0].shape[0]
+    junctions[n] = maps[-1].shape[1]
+    for i in range(1, n):
+        out_dim = maps[i - 1].shape[1]
+        in_dim = maps[i].shape[0]
+        junctions[i] = out_dim if out_dim != "*" else in_dim
+
+    def is_free(m):
+        return m.shape == ("*", "*")
+
+    # propagate known dimensions through free maps toward the output...
+    for i in range(n - 1, -1, -1):
+        if is_free(maps[i]) and junctions[i] == "*" and junctions[i + 1] != "*":
+            junctions[i] = junctions[i + 1]
+    # ...and toward the input.
+    for i in range(n):
+        if is_free(maps[i]) and junctions[i + 1] == "*" and junctions[i] != "*":
+            junctions[i + 1] = junctions[i]
+
+    return (junctions[0], junctions[n])
+
+
 class ComboMap(IdentityMap):
     r"""Combination mapping constructed by joining a set of other mappings.
 
@@ -414,37 +464,51 @@ class ComboMap(IdentityMap):
 
     def __init__(self, maps, **kwargs):
         super().__init__(mesh=None, **kwargs)
+        self.maps = maps
 
-        self.maps = []
-        for ii, m in enumerate(maps):
-            assert isinstance(m, IdentityMap), "Unrecognized data type, "
-            "inherit from an IdentityMap or ComboMap!"
+    @property
+    def maps(self):
+        r"""The mappings being combined.
 
-            if (
-                ii > 0
-                and not (self.shape[1] == "*" or m.shape[0] == "*")
-                and not self.shape[1] == m.shape[0]
-            ):
-                prev = self.maps[-1]
+        Returns
+        -------
+        tuple of simpeg.maps.IdentityMap
+            The mappings, ordered from last applied to first applied. This
+            is a ``tuple`` (rather than a ``list``) so it cannot be mutated
+            in a way that would make the cached :py:attr:`shape` stale;
+            assign a new value to ``maps`` instead.
+        """
+        return self._maps
 
-                raise ValueError(
-                    "Dimension mismatch in map[{0!s}] ({1!s}, {2!s}) "
-                    "and map[{3!s}] ({4!s}, {5!s}).".format(
-                        prev.__class__.__name__,
-                        prev.shape[0],
-                        prev.shape[1],
-                        m.__class__.__name__,
-                        m.shape[0],
-                        m.shape[1],
+    @maps.setter
+    def maps(self, value):
+        value = validate_list_of_types("maps", value, IdentityMap, min_n=1)
+
+        resolved = []
+        for ii, m in enumerate(value):
+            if ii > 0:
+                prev_shape = _resolve_combo_shape(resolved)
+                if (
+                    not (prev_shape[1] == "*" or m.shape[0] == "*")
+                    and not prev_shape[1] == m.shape[0]
+                ):
+                    prev = resolved[-1]
+                    raise ValueError(
+                        "Dimension mismatch in map[{0!s}] ({1!s}, {2!s}) "
+                        "and map[{3!s}] ({4!s}, {5!s}).".format(
+                            prev.__class__.__name__,
+                            prev.shape[0],
+                            prev.shape[1],
+                            m.__class__.__name__,
+                            m.shape[0],
+                            m.shape[1],
+                        )
                     )
-                )
 
-            if np.any([isinstance(m, SumMap), isinstance(m, IdentityMap)]):
-                self.maps += [m]
-            elif isinstance(m, ComboMap):
-                self.maps += m.maps
-            else:
-                raise ValueError("Map[{0!s}] not supported", m.__class__.__name__)
+            resolved.append(m)
+
+        self._maps = tuple(resolved)
+        self._shape = _resolve_combo_shape(self._maps)
 
     @property
     def shape(self):
@@ -453,14 +517,18 @@ class ComboMap(IdentityMap):
         For a list of SimPEG mappings [:math:`\mathbf{f}_n,...,\mathbf{f}_1`]
         that have been joined to create a ``ComboMap``, this method returns
         the dimensions of the combination mapping. Recall that the ordering
-        of the list of mappings is from last to first.
+        of the list of mappings is from last to first. This is computed once
+        when the mapping's ``maps`` are set and reused afterward.
 
         Returns
         -------
         (2) tuple of int
-            Dimensions of the mapping operator.
+            Dimensions of the mapping operator. If a dimension cannot be
+            resolved from the chain of mappings (e.g. every mapping in
+            the chain has shape (``*``, ``*``)), ``*`` is returned for
+            that dimension instead.
         """
-        return (self.maps[0].shape[0], self.maps[-1].shape[1])
+        return self._shape
 
     @property
     def nP(self):
@@ -468,10 +536,10 @@ class ComboMap(IdentityMap):
 
         Returns
         -------
-        int
+        int or ``*``
             Number of parameters that the mapping acts on.
         """
-        return self.maps[-1].nP
+        return self.shape[1]
 
     def _transform(self, m):
         for map_i in reversed(self.maps):
@@ -761,37 +829,50 @@ class SumMap(ComboMap):
     """
 
     def __init__(self, maps, **kwargs):
-        maps = validate_list_of_types("maps", maps, IdentityMap)
-
         # skip ComboMap's init
         super(ComboMap, self).__init__(mesh=None, **kwargs)
+        self.maps = maps
 
-        self.maps = []
-        for ii, m in enumerate(maps):
-            if not isinstance(m, IdentityMap):
-                raise TypeError(
-                    "Unrecognized data type {}, inherit from an "
-                    "IdentityMap!".format(type(m))
-                )
+    @property
+    def maps(self):
+        r"""The mappings being summed.
 
-            if (
-                ii > 0
-                and not (self.shape == "*" or m.shape == "*")
-                and not self.shape == m.shape
-            ):
-                raise ValueError(
-                    "Dimension mismatch in map[{0!s}] ({1!s}, {2!s}) "
-                    "and map[{3!s}] ({4!s}, {5!s}).".format(
-                        self.maps[0].__class__.__name__,
-                        self.maps[0].shape[0],
-                        self.maps[0].shape[1],
-                        m.__class__.__name__,
-                        m.shape[0],
-                        m.shape[1],
+        Returns
+        -------
+        tuple of simpeg.maps.IdentityMap
+            The mappings being summed together. This is a ``tuple``
+            (rather than a ``list``) so it cannot be mutated in a way
+            that would make the cached :py:attr:`shape` stale; assign a
+            new value to ``maps`` instead.
+        """
+        return self._maps
+
+    @maps.setter
+    def maps(self, value):
+        value = tuple(validate_list_of_types("maps", value, IdentityMap, min_n=1))
+
+        shape0, shape1 = value[0].shape
+        for ii, m in enumerate(value):
+            if ii > 0:
+                if not _shapes_compatible((shape0, shape1), m.shape):
+                    raise ValueError(
+                        "Dimension mismatch in map[{0!s}] ({1!s}, {2!s}) "
+                        "and map[{3!s}] ({4!s}, {5!s}).".format(
+                            value[0].__class__.__name__,
+                            value[0].shape[0],
+                            value[0].shape[1],
+                            m.__class__.__name__,
+                            m.shape[0],
+                            m.shape[1],
+                        )
                     )
-                )
+                if shape0 == "*":
+                    shape0 = m.shape[0]
+                if shape1 == "*":
+                    shape1 = m.shape[1]
 
-            self.maps += [m]
+        self._maps = value
+        self._shape = (shape0, shape1)
 
     @property
     def shape(self):
@@ -800,9 +881,12 @@ class SumMap(ComboMap):
         Returns
         -------
         tuple
-            The dimensions of the mapping. A tuple of the form (``int``,``int``)
+            The dimensions of the mapping. A tuple of the form (``int``,``int``).
+            If none of the summed mappings fix a given dimension, ``*`` is
+            returned for that dimension instead. This is computed once when
+            the mapping's ``maps`` are set and reused afterward.
         """
-        return (self.maps[0].shape[0], self.maps[0].shape[1])
+        return self._shape
 
     @property
     def nP(self):
@@ -810,10 +894,10 @@ class SumMap(ComboMap):
 
         Returns
         -------
-        int
+        int or ``*``
             Number of parameters that the mapping acts on.
         """
-        return self.maps[-1].shape[1]
+        return self.shape[1]
 
     def _transform(self, m):
         for ii, map_i in enumerate(self.maps):
@@ -925,10 +1009,11 @@ class SphericalSystem(IdentityMap):
         self.model = None
 
     def sphericalDeriv(self, model):
-        if (
-            getattr(self, "_sphericalDeriv", None) is None
-            or getattr(self, "model", None) is None
-            or not all(self.model == model)
+        if getattr(self, "model", None) is None:
+            self.model = model
+
+        if getattr(self, "_sphericalDeriv", None) is None or not all(
+            self.model == model
         ):
             self.model = model
 
@@ -1229,24 +1314,165 @@ class TileMap(IdentityMap):
         local_mesh,
         tol=1e-8,
         components=1,
+        **kwargs,
+    ):
+        super().__init__(mesh=None, **kwargs)
+        self._global_mesh = validate_type(
+            "global_mesh", global_mesh, discretize.TreeMesh, cast=False
+        )
+        self._local_mesh = validate_type(
+            "local_mesh", local_mesh, discretize.TreeMesh, cast=False
+        )
+
+        self._global_active = validate_active_indices(
+            "global_active", global_active, self.global_mesh.n_cells
+        )
+
+        self._tol = validate_float("tol", tol, min_val=0.0, inclusive_min=False)
+        self._components = validate_integer("components", components, min_val=1)
+
+        # trigger creation of P
+        self.P
+
+    @property
+    def global_mesh(self):
+        """Global TreeMesh defining the entire domain.
+
+        Returns
+        -------
+        discretize.TreeMesh
+        """
+        return self._global_mesh
+
+    @property
+    def local_mesh(self):
+        """Local TreeMesh defining the local domain.
+
+        Returns
+        -------
+        discretize.TreeMesh
+        """
+        return self._local_mesh
+
+    @property
+    def global_active(self):
+        """Defines the active cells in the global mesh.
+
+        Returns
+        -------
+        (global_mesh.n_cells) numpy.ndarray of bool
+        """
+        return self._global_active
+
+    @property
+    def local_active(self):
+        """
+        This is the local_active of the global_active used in the global problem.
+
+        Returns
+        -------
+        (local_mesh.n_cells) numpy.ndarray of bool
+        """
+        return self._local_active
+
+    @property
+    def tol(self):
+        """Tolerance to avoid zero division.
+
+        Returns
+        -------
+        float
+        """
+        return self._tol
+
+    @property
+    def components(self):
+        """Number of components in the model.
+
+        Returns
+        -------
+        int
+        """
+        return self._components
+
+    @property
+    def P(self):
+        """
+        Set the projection matrix with partial volumes
+        """
+        if getattr(self, "_P", None) is None:
+            # Volume-averaging operator mapping the global mesh onto the local
+            # mesh. This weights by the true partial overlap volume of each
+            # pair of cells, so it is correct regardless of which mesh is finer
+            # in a given region (the center-assignment approach used previously
+            # broke down wherever the local mesh was finer than the global one).
+            vol_avg = volume_average(self.global_mesh, self.local_mesh)
+
+            # keep only the active cells of the global model
+            P = vol_avg[:, self.global_active]
+
+            # local cells that receive a contribution from active global cells
+            self._local_active = mkvc(np.asarray(P.sum(axis=1)).ravel() > self.tol)
+
+            P = P[self.local_active, :]
+
+            self._P = sp.block_diag([P for _ in range(self.components)])
+
+        return self._P
+
+    def _transform(self, m):
+        return self.P * m
+
+    @property
+    def shape(self):
+        """
+        Shape of the matrix operation (number of indices x nP)
+        """
+        return self.P.shape
+
+    def deriv(self, m, v=None):
+        """
+        :param numpy.ndarray m: model
+        :rtype: scipy.sparse.csr_matrix
+        :return: derivative of transformed model
+        """
+        if v is not None:
+            return self.P * v
+        return self.P
+
+
+class TileMapNested(IdentityMap):
+    """
+    Mapping for tiled inversion.
+
+    Uses volume averaging to map a model defined on a global mesh to the
+    local mesh. Every cell in the local mesh must also be in the global mesh.
+
+    Parameters
+    ----------
+    global_mesh : discretize.TreeMesh
+        Global TreeMesh defining the entire domain.
+    global_active : numpy.ndarray of bool or int
+        Defines the active cells in the global mesh.
+    local_mesh : discretize.TreeMesh
+        Local TreeMesh for the simulation.
+    tol : float, optional
+        Tolerance to avoid zero division
+    components : int, optional
+        Number of components in the model. E.g. a vector model in 3D would have 3
+        components.
+    """
+
+    def __init__(
+        self,
+        global_mesh,
+        global_active,
+        local_mesh,
+        tol=1e-8,
+        components=1,
         enforce_active=True,
         **kwargs,
     ):
-        """
-        Parameters
-        ----------
-        global_mesh : discretize.TreeMesh
-            Global TreeMesh defining the entire domain.
-        global_active : numpy.ndarray of bool or int
-            Defines the active cells in the global mesh.
-        local_mesh : discretize.TreeMesh
-            Local TreeMesh for the simulation.
-        tol : float, optional
-            Tolerance to avoid zero division
-        components : int, optional
-            Number of components in the model. E.g. a vector model in 3D would have 3
-            components.
-        """
         super().__init__(mesh=None, **kwargs)
         self._global_mesh = validate_type(
             "global_mesh", global_mesh, discretize.TreeMesh, cast=False

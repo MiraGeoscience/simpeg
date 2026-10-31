@@ -15,6 +15,7 @@ authors = [
 ]
 
 keywords = ["geophysics", "inverse problem"]
+
 dependencies = [
     "discretize>=0.11",
     "geoana>=0.7.0",
@@ -63,10 +64,9 @@ sklearn = ["scikit-learn>=1.2"]
 pandas = ["pandas"]
 all = [
     "simpeg[dask,choclo,plotting,reporting,sklearn,pandas]"
-
 ] # all optional *runtime* dependencies (not related to development)
 style = [
-    "black==24.3.0",
+    "black==26.3.1",
     "flake8==7.0.0",
     "flake8-bugbear==23.12.2",
     "flake8-builtins==2.2.0",
@@ -74,6 +74,7 @@ style = [
     "flake8-rst-docstrings==0.3.0",
     "flake8-docstrings==1.7.0",
     "flake8-pyproject==1.2.3",
+    "ruff==0.16.6",
 ]
 docs = [
     "sphinx",
@@ -90,14 +91,8 @@ docs = [
     "memory_profiler",
     "python-kaleido",
 ]
-tests = [
-    "simpeg[all,docs]",
-    "pytest",
-    "pytest-cov",
-]
-dev = [
-    "simpeg[all,style,docs,tests]",
-] # the whole kit and caboodle
+tests = ["simpeg[all,docs]", "pytest", "pytest-cov"]
+dev = ["simpeg[all,style,docs,tests]"] # the whole kit and caboodle
 
 [tool.setuptools]
 py-modules = ['SimPEG']
@@ -113,6 +108,8 @@ local_scheme = "node-and-date"
 [tool.coverage.run]
 branch = true
 source = ["simpeg", "tests", "examples", "tutorials"]
+concurrency = ["thread", "multiprocessing"]
+parallel = true
 
 [tool.coverage.report]
 ignore_errors = false
@@ -141,13 +138,21 @@ exclude_also = [
 directory = "coverage_html_report"
 
 [tool.black]
-required-version = '25.1.0'
-target-version = ['py38', 'py39', 'py310', 'py311']
+required-version = '26.3.1'
+target-version = ["py312", "py313", "py314"]
+
 
 [tool.flake8]
 extend-ignore = [
     # Default ignores by flake (added here for when ignore gets overwritten)
-    'E121','E123','E126','E226','E24','E704','W503','W504',
+    'E121',
+    'E123',
+    'E126',
+    'E226',
+    'E24',
+    'E704',
+    'W503',
+    'W504',
     # Too many leading '#' for block comment
     'E266',
     # Line too long (82 > 79 characters)
@@ -253,21 +258,35 @@ ignore = [
     'RST499',
 ]
 
-rst-roles = [
-    'class',
-    'func',
-    'mod',
-    'meth',
-    'ref',
+rst-roles = ['class', 'func', 'mod', 'meth', 'ref']
+
+
+[tool.ruff]
+line-length = 88
+indent-width = 4
+
+[tool.ruff.lint]
+# Select only these rules.
+select = [
+    "D406", # Section name should end with a newline
+    "D406", # Missing dashed underline after section
+    "D408", # Section underline should be in the line following the section's name
+    "D409", # Section underline should match the length of its name
 ]
+
+[tool.ruff.lint.pydocstyle]
+# Make ruff to check for numpydoc style in our docs
+convention = "numpy"
+
 # pyproject.toml
 [tool.pytest.ini_options]
 filterwarnings = [
-    "ignore::simpeg.utils.solver_utils.DefaultSolverWarning",
     "error:You are running a pytest without setting a random seed.*:UserWarning",
     "error:The `index_dictionary` property has been deprecated:FutureWarning",
     'error:The `simpeg\.directives\.[a-z_]+` submodule has been deprecated',
     'error:Casting complex values to real discards the imaginary part',
+    'ignore::simpeg.utils.BreakingChangeWarning',
+    "error:The closest_points_index utilty function has been moved to:DeprecationWarning",
 ]
 xfail_strict = true
 

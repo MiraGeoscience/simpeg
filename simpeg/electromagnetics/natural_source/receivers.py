@@ -1,3 +1,5 @@
+"""Natural source EM receivers."""
+
 from ...utils.code_utils import (
     validate_string,
     validate_type,
@@ -8,6 +10,7 @@ import numpy as np
 from scipy.constants import mu_0
 from scipy.sparse import csr_matrix
 from ...survey import BaseRx
+from simpeg.utils import mkvc
 
 
 def _alpha(src):
@@ -116,7 +119,7 @@ class BaseNaturalSourceRx(BaseRx):
         scipy.sparse.csr_matrix
             P, the interpolation matrix.
         """
-        key = (mesh.n_cells, projected_grid, location_id)
+        key = (mesh, projected_grid, location_id)
         if key in self._Ps:
             return self._Ps[key]
         locs = self._locations[location_id]
@@ -152,6 +155,39 @@ class _ElectricAndMagneticReceiver(BaseNaturalSourceRx):
             Location where the magnetic field is measured for all receiver data
         """
         return self._locations[1]
+
+
+class _BaseOrientationInvariant(BaseNaturalSourceRx):
+    """Intermediate class for receivers for orientation invariant transfer functions."""
+
+    def __init__(  # noqa: D107
+        self,
+        locations1,
+        locations2=None,
+        base_type="magnetic",
+        storeProjections=False,
+    ):
+        super().__init__(
+            locations1=locations1,
+            locations2=locations2,
+            storeProjections=storeProjections,
+        )
+        self.base_type = base_type
+
+    @property
+    def base_type(self):
+        r"""Whether a 'magnetic' or 'electric' base station is used.
+
+        Returns
+        -------
+        str
+            Base station type; i.e. "magnetic" or "electric"
+        """
+        return self._base_type
+
+    @base_type.setter
+    def base_type(self, var):
+        self._base_type = validate_string("base_type", var, ["magnetic", "electric"])
 
 
 class Impedance(_ElectricAndMagneticReceiver):
@@ -209,7 +245,7 @@ class Impedance(_ElectricAndMagneticReceiver):
         - 'rho': Apparent resistivity (:math:`\Omega m`)
         - 'phase': Phase angle (degrees)
         - 'complex': The complex impedance is returned. Do not use for inversion!
-    storeProjections : bool
+    storeProjections : bool, optional
         Whether to cache to internal projection matrices.
     """
 
@@ -324,11 +360,11 @@ class Impedance(_ElectricAndMagneticReceiver):
                 PH = self.getP(mesh, h_loc)
             elif mesh.dim == 2:
                 if self.orientation == "xy":
-                    PE = self.getP(mesh, "Ex")
-                    PH = self.getP(mesh, "CC")
+                    PE = self.getP(mesh, "Ex", 0)
+                    PH = self.getP(mesh, "CC", 1)
                 elif self.orientation == "yx":
-                    PE = self.getP(mesh, "CC")
-                    PH = self.getP(mesh, "Ex")
+                    PE = self.getP(mesh, "CC", 0)
+                    PH = self.getP(mesh, "Ex", 1)
             top = PE @ e[:, 0]
             bot = PH @ h[:, 0]
 
@@ -374,11 +410,11 @@ class Impedance(_ElectricAndMagneticReceiver):
                 PH = self.getP(mesh, h_loc)
             elif mesh.dim == 2:
                 if self.orientation == "xy":
-                    PE = self.getP(mesh, "Ex")
-                    PH = self.getP(mesh, "CC")
+                    PE = self.getP(mesh, "Ex", 0)
+                    PH = self.getP(mesh, "CC", 1)
                 elif self.orientation == "yx":
-                    PE = self.getP(mesh, "CC")
-                    PH = self.getP(mesh, "Ex")
+                    PE = self.getP(mesh, "CC", 0)
+                    PH = self.getP(mesh, "Ex", 1)
 
             top = PE @ e[:, 0]
             bot = PH @ h[:, 0]
@@ -402,8 +438,9 @@ class Impedance(_ElectricAndMagneticReceiver):
                 v = -1j * v
 
             # Work backwards!
-            gtop_v = np.c_[v] / bot[:, None]
-            gbot_v = -imp[:, None] * np.c_[v] / bot[:, None]
+            gtop_v = v / bot
+            gbot_v = -imp * v / bot
+            n_d = self.nD
 
             if mesh.dim == 3:
                 ghx_v = np.einsum(
@@ -423,6 +460,12 @@ class Impedance(_ElectricAndMagneticReceiver):
                     ghy_v += gh_v
                 else:
                     ghx_v -= gh_v
+
+                if v.ndim == 2:
+                    # collapse into a long list of n_d vectors
+                    ghx_v = ghx_v.reshape((n_d, -1))
+                    ghy_v = ghy_v.reshape((n_d, -1))
+                    ge_v = ge_v.reshape((n_d, -1))
 
                 gh_v = Phx.T @ csr_matrix(ghx_v) + Phy.T @ csr_matrix(ghy_v)
                 ge_v = Pe.T @ csr_matrix(ge_v)
@@ -598,7 +641,7 @@ class Tipper(BaseNaturalSourceRx):
     locations_base : (n_loc, n_dim) array_like, optional
         Locations where the base station magnetic fields are measured. Defaults to
         the same locations as the roving magnetic fields measurements,
-        `locations_r`.
+        `locations_h`.
     orientation : {'xx', 'yx', 'zx', 'zy', 'yy', 'zy'}
         Specifies the tipper element :math:`T_{ij}` corresponding to the data.
     component : {'real', 'imag', 'complex'}
@@ -607,7 +650,7 @@ class Tipper(BaseNaturalSourceRx):
         - 'real': Real component of the tipper (unitless)
         - 'imag': Imaginary component of the tipper (unitless)
         - 'complex': The complex tipper is returned. Do not use for inversion!
-    storeProjections : bool
+    storeProjections : bool, optional
         Whether to cache to internal projection matrices.
     """
 
@@ -704,100 +747,151 @@ class Tipper(BaseNaturalSourceRx):
         # will grab both primary and secondary and sum them!
         h = f[src, "h"]
 
-        Phx = self.getP(mesh, "Fx", 1)
-        Phy = self.getP(mesh, "Fy", 1)
-        Pho = self.getP(mesh, "F" + self.orientation[0], 0)
+        # Only Tzx
+        if mesh.dim == 2:
 
-        hx = Phx @ h
-        hy = Phy @ h
-        ho = Pho @ h
+            Phx = self.getP(mesh, "Ex", 1)
+            Phz = self.getP(mesh, "Ey", 0)
 
-        if self.orientation[1] == "x":
-            h = -hy
+            hz = Phz @ h[:, 0]
+            hx = Phx @ h[:, 0]
+
+            return hz / hx
+
         else:
-            h = hx
 
-        top = h[:, 0] * ho[:, 1] - h[:, 1] * ho[:, 0]
-        bot = hx[:, 0] * hy[:, 1] - hx[:, 1] * hy[:, 0]
-        return top / bot
+            Phx = self.getP(mesh, "Fx", 1)
+            Phy = self.getP(mesh, "Fy", 1)
+            Pho = self.getP(mesh, "F" + self.orientation[0], 0)
+
+            hx = Phx @ h
+            hy = Phy @ h
+            ho = Pho @ h
+
+            if self.orientation[1] == "x":
+                h = -hy
+            else:
+                h = hx
+
+            top = h[:, 0] * ho[:, 1] - h[:, 1] * ho[:, 0]
+            bot = hx[:, 0] * hy[:, 1] - hx[:, 1] * hy[:, 0]
+
+            return top / bot
 
     def _eval_tipper_deriv(self, src, mesh, f, du_dm_v=None, v=None, adjoint=False):
         # will grab both primary and secondary and sum them!
+        h = f[src, "h"]
 
-        if not isinstance(f, np.ndarray):
-            h = f[src, "h"]
+        if mesh.dim == 2:
+
+            Phx = self.getP(mesh, "Ex", 1)
+            Phz = self.getP(mesh, "Ey", 0)
+
+            hz = Phz @ h[:, 0]
+            hx = Phx @ h[:, 0]
+
+            tip = hz / hx
+
         else:
-            h = f
 
-        Phx = self.getP(mesh, "Fx", 1)
-        Phy = self.getP(mesh, "Fy", 1)
-        Phz = self.getP(mesh, "Fz", 0)
-        hx = Phx @ h
-        hy = Phy @ h
-        hz = Phz @ h
+            Phx = self.getP(mesh, "Fx", 1)
+            Phy = self.getP(mesh, "Fy", 1)
+            Pho = self.getP(mesh, "F" + self.orientation[0], 0)
 
-        if self.orientation[1] == "x":
-            h = -hy
-        else:
-            h = hx
-
-        top = h[:, 0] * hz[:, 1] - h[:, 1] * hz[:, 0]
-        bot = hx[:, 0] * hy[:, 1] - hx[:, 1] * hy[:, 0]
-        imp = top / bot
-
-        if adjoint:
-            # Work backwards!
-            gtop_v = np.c_[v] / bot[:, None]
-            gbot_v = -imp[:, None] * np.c_[v] / bot[:, None]
-
-            ghx_v = np.einsum("ij,ik->ijk", gbot_v, np.c_[hy[:, 1], -hy[:, 0]]).reshape(
-                (hy.shape[0], -1)
-            )
-            ghy_v = np.einsum("ij,ik->ijk", gbot_v, np.c_[-hx[:, 1], hx[:, 0]]).reshape(
-                (hx.shape[0], -1)
-            )
-            ghz_v = np.einsum("ij,ik->ijk", gtop_v, np.c_[-h[:, 1], h[:, 0]]).reshape(
-                (h.shape[0], -1)
-            )
-            gh_v = np.einsum("ij,ik->ijk", gtop_v, np.c_[hz[:, 1], -hz[:, 0]]).reshape(
-                (hz.shape[0], -1)
-            )
+            hx = Phx @ h
+            hy = Phy @ h
+            ho = Pho @ h
 
             if self.orientation[1] == "x":
-                ghy_v -= gh_v
+                h = -hy
             else:
-                ghx_v += gh_v
+                h = hx
 
-            gh_v = (
-                Phx.T @ csr_matrix(ghx_v)
-                + Phy.T @ csr_matrix(ghy_v)
-                + Phz.T @ csr_matrix(ghz_v)
-            )
+            top = h[:, 0] * ho[:, 1] - h[:, 1] * ho[:, 0]
+            bot = hx[:, 0] * hy[:, 1] - hx[:, 1] * hy[:, 0]
+
+            tip = top / bot
+
+        # ADJOINT
+        if adjoint:
+
+            n_d = self.nD
+
+            if mesh.dim == 2:
+
+                ghz_v = v / hx
+                ghx_v = -tip * v / hx
+                gh_v = Phx.T @ ghx_v + Phz.T @ ghz_v
+
+            else:
+                gtop_v = np.c_[v] / bot[:, None]
+                gbot_v = -tip[:, None] * np.c_[v] / bot[:, None]
+
+                ghx_v = np.einsum(
+                    "ij,ik->ijk", gbot_v, np.c_[hy[:, 1], -hy[:, 0]]
+                ).reshape((hy.shape[0], -1))
+                ghy_v = np.einsum(
+                    "ij,ik->ijk", gbot_v, np.c_[-hx[:, 1], hx[:, 0]]
+                ).reshape((hx.shape[0], -1))
+                gho_v = np.einsum(
+                    "ij,ik->ijk", gtop_v, np.c_[-h[:, 1], h[:, 0]]
+                ).reshape((h.shape[0], -1))
+                gh_v = np.einsum(
+                    "ij,ik->ijk", gtop_v, np.c_[ho[:, 1], -ho[:, 0]]
+                ).reshape((ho.shape[0], -1))
+                if self.orientation[1] == "x":
+                    ghy_v -= gh_v
+                else:
+                    ghx_v += gh_v
+
+                if v.ndim == 2:
+                    # collapse into a long list of n_d vectors
+                    ghx_v = ghx_v.reshape((n_d, -1))
+                    ghy_v = ghy_v.reshape((n_d, -1))
+                    gho_v = gho_v.reshape((n_d, -1))
+
+                gh_v = (
+                    Phx.T @ csr_matrix(ghx_v)
+                    + Phy.T @ csr_matrix(ghy_v)
+                    + Pho.T @ csr_matrix(gho_v)
+                )
+
             return f._hDeriv(src, None, gh_v, adjoint=True)
 
+        # JVEC
         dh_v = f._hDeriv(src, du_dm_v, v, adjoint=False)
-        dhx_v = Phx @ dh_v
-        dhy_v = Phy @ dh_v
-        dhz_v = Phz @ dh_v
-        if self.orientation[1] == "x":
-            dh_v = -dhy_v
+
+        if mesh.dim == 2:
+
+            dhx_v = Phx @ dh_v
+            dhz_v = Phz @ dh_v
+
+            return (dhz_v - tip * dhx_v) / hx
+
         else:
-            dh_v = dhx_v
 
-        dtop_v = (
-            h[:, 0] * dhz_v[:, 1]
-            + dh_v[:, 0] * hz[:, 1]
-            - h[:, 1] * dhz_v[:, 0]
-            - dh_v[:, 1] * hz[:, 0]
-        )
-        dbot_v = (
-            hx[:, 0] * dhy_v[:, 1]
-            + dhx_v[:, 0] * hy[:, 1]
-            - hx[:, 1] * dhy_v[:, 0]
-            - dhx_v[:, 1] * hy[:, 0]
-        )
+            dhx_v = Phx @ dh_v
+            dhy_v = Phy @ dh_v
+            dho_v = Pho @ dh_v
+            if self.orientation[1] == "x":
+                dh_v = -dhy_v
+            else:
+                dh_v = dhx_v
 
-        return (bot * dtop_v - top * dbot_v) / (bot * bot)
+            dtop_v = (
+                h[:, 0] * dho_v[:, 1]
+                + dh_v[:, 0] * ho[:, 1]
+                - h[:, 1] * dho_v[:, 0]
+                - dh_v[:, 1] * ho[:, 0]
+            )
+            dbot_v = (
+                hx[:, 0] * dhy_v[:, 1]
+                + dhx_v[:, 0] * hy[:, 1]
+                - hx[:, 1] * dhy_v[:, 0]
+                - dhx_v[:, 1] * hy[:, 0]
+            )
+
+            return (bot * dtop_v - top * dbot_v) / (bot * bot)
 
     def eval(self, src, mesh, f):  # noqa: A003
         tip = self._eval_tipper(src, mesh, f)
@@ -859,7 +953,7 @@ class Admittance(_ElectricAndMagneticReceiver):
         - 'real': Real component of the admittance (A/V)
         - 'imag': Imaginary component of the admittance (A/V)
         - 'complex': The complex admittance is returned. Do not use for inversion!
-    storeProjections : bool
+    storeProjections : bool, optional
         Whether to cache to internal projection matrices.
     """
 
@@ -932,56 +1026,85 @@ class Admittance(_ElectricAndMagneticReceiver):
         )
 
     def _eval_admittance(self, src, mesh, f):
-        if mesh.dim < 3:
+        if mesh.dim == 1:
             raise NotImplementedError(
-                "Admittance receiver not implemented for dim < 3."
+                "Admittance receiver not implemented for dim == 1."
             )
 
         e = f[src, "e"]
         h = f[src, "h"]
 
-        ex = self.getP(mesh, "Ex", 0) @ e
-        ey = self.getP(mesh, "Ey", 0) @ e
+        if mesh.dim == 2:
+            if self.orientation == "yx":
+                PE = self.getP(mesh, "Ex", 0)
+                PH = self.getP(mesh, "CC", 1)
+            elif self.orientation == "xy":
+                PE = self.getP(mesh, "CC", 0)
+                PH = self.getP(mesh, "Ex", 1)
 
-        h = self.getP(mesh, "F" + self.orientation[0], 1) @ h
+            top = PH @ h[:, 0]
+            bot = PE @ e[:, 0]
 
-        if self.orientation[1] == "x":
-            top = h[:, 0] * ey[:, 1] - h[:, 1] * ex[:, 1]
         else:
-            top = -h[:, 0] * ey[:, 0] + h[:, 1] * ex[:, 0]
 
-        bot = ex[:, 0] * ey[:, 1] - ex[:, 1] * ey[:, 0]
+            ex = self.getP(mesh, "Ex", 0) @ e
+            ey = self.getP(mesh, "Ey", 0) @ e
+
+            h = self.getP(mesh, "F" + self.orientation[0], 1) @ h
+
+            if self.orientation[1] == "x":
+                top = h[:, 0] * ey[:, 1] - h[:, 1] * ex[:, 1]
+            else:
+                top = -h[:, 0] * ey[:, 0] + h[:, 1] * ex[:, 0]
+
+            bot = ex[:, 0] * ey[:, 1] - ex[:, 1] * ey[:, 0]
 
         return top / bot
 
     def _eval_admittance_deriv(self, src, mesh, f, du_dm_v=None, v=None, adjoint=False):
-        if mesh.dim < 3:
+        if mesh.dim == 1:
             raise NotImplementedError(
-                "Admittance receiver not implemented for dim < 3."
+                "Admittance receiver not implemented for dim == 1."
             )
 
-        # Compute admittances
+        # COMPUTE ADMITTANCES
         e = f[src, "e"]
         h = f[src, "h"]
 
-        Pex = self.getP(mesh, "Ex", 0)
-        Pey = self.getP(mesh, "Ey", 0)
-        Ph = self.getP(mesh, "F" + self.orientation[0], 1)
+        if mesh.dim == 2:
+            if self.orientation == "yx":
+                Pe = self.getP(mesh, "Ex", 0)
+                Ph = self.getP(mesh, "CC", 1)
+            elif self.orientation == "xy":
+                Pe = self.getP(mesh, "CC", 0)
+                Ph = self.getP(mesh, "Ex", 1)
 
-        ex = Pex @ e
-        ey = Pey @ e
-        h = Ph @ h
+            top = Ph @ h[:, 0]
+            bot = Pe @ e[:, 0]
+            adm = top / bot
 
-        if self.orientation[1] == "x":
-            p_ind = 1
             fact = 1.0
-        else:
-            p_ind = 0
-            fact = -1.0
 
-        top = fact * (h[:, 0] * ey[:, p_ind] - h[:, 1] * ex[:, p_ind])
-        bot = ex[:, 0] * ey[:, 1] - ex[:, 1] * ey[:, 0]
-        adm = top / bot
+        else:
+
+            Pex = self.getP(mesh, "Ex", 0)
+            Pey = self.getP(mesh, "Ey", 0)
+            Ph = self.getP(mesh, "F" + self.orientation[0], 1)
+
+            ex = Pex @ e
+            ey = Pey @ e
+            h = Ph @ h
+
+            if self.orientation[1] == "x":
+                p_ind = 1
+                fact = 1.0
+            else:
+                p_ind = 0
+                fact = -1.0
+
+            top = fact * (h[:, 0] * ey[:, p_ind] - h[:, 1] * ex[:, p_ind])
+            bot = ex[:, 0] * ey[:, 1] - ex[:, 1] * ey[:, 0]
+            adm = top / bot
 
         # ADJOINT
         if adjoint:
@@ -992,14 +1115,21 @@ class Admittance(_ElectricAndMagneticReceiver):
             a_v = fact * v / bot  # term 1
             b_v = -adm * v / bot  # term 2
 
-            ex_v = np.c_[ey[:, 1], -ey[:, 0]] * b_v[:, None]  # terms dex in bot
-            ey_v = np.c_[-ex[:, 1], ex[:, 0]] * b_v[:, None]  # terms dey in bot
-            ex_v[:, p_ind] -= h[:, 1] * a_v  # add terms dex in top
-            ey_v[:, p_ind] += h[:, 0] * a_v  # add terms dey in top
-            e_v = Pex.T @ ex_v + Pey.T @ ey_v
+            if mesh.dim == 2:
 
-            h_v = np.c_[ey[:, p_ind], -ex[:, p_ind]] * a_v[:, None]  # h in top
-            h_v = Ph.T @ h_v
+                h_v = Ph.T @ a_v
+                e_v = Pe.T @ b_v
+
+            else:
+
+                ex_v = np.c_[ey[:, 1], -ey[:, 0]] * b_v[:, None]  # terms dex in bot
+                ey_v = np.c_[-ex[:, 1], ex[:, 0]] * b_v[:, None]  # terms dey in bot
+                ex_v[:, p_ind] -= h[:, 1] * a_v  # add terms dex in top
+                ey_v[:, p_ind] += h[:, 0] * a_v  # add terms dey in top
+                e_v = Pex.T @ ex_v + Pey.T @ ey_v
+
+                h_v = np.c_[ey[:, p_ind], -ex[:, p_ind]] * a_v[:, None]  # h in top
+                h_v = Ph.T @ h_v
 
             fu_e_v, fm_e_v = f._eDeriv(src, None, e_v, adjoint=True)
             fu_h_v, fm_h_v = f._hDeriv(src, None, h_v, adjoint=True)
@@ -1007,25 +1137,34 @@ class Admittance(_ElectricAndMagneticReceiver):
             return fu_e_v + fu_h_v, fm_e_v + fm_h_v
 
         # JVEC
-        de_v = f._eDeriv(src, du_dm_v, v, adjoint=False)
-        dh_v = Ph @ f._hDeriv(src, du_dm_v, v, adjoint=False)
+        if mesh.dim == 2:
 
-        dex_v = Pex @ de_v
-        dey_v = Pey @ de_v
+            de_v = Pe @ f._eDeriv(src, du_dm_v, v, adjoint=False)
+            dh_v = Ph @ f._hDeriv(src, du_dm_v, v, adjoint=False)
 
-        dtop_v = fact * (
-            h[:, 0] * dey_v[:, p_ind]
-            + dh_v[:, 0] * ey[:, p_ind]
-            - h[:, 1] * dex_v[:, p_ind]
-            - dh_v[:, 1] * ex[:, p_ind]
-        )
-        dbot_v = (
-            ex[:, 0] * dey_v[:, 1]
-            + dex_v[:, 0] * ey[:, 1]
-            - ex[:, 1] * dey_v[:, 0]
-            - dex_v[:, 1] * ey[:, 0]
-        )
-        adm_deriv = (bot * dtop_v - top * dbot_v) / (bot * bot)
+            adm_deriv = (dh_v - adm * de_v) / bot
+
+        else:
+
+            de_v = f._eDeriv(src, du_dm_v, v, adjoint=False)
+            dh_v = Ph @ f._hDeriv(src, du_dm_v, v, adjoint=False)
+
+            dex_v = Pex @ de_v
+            dey_v = Pey @ de_v
+
+            dtop_v = fact * (
+                h[:, 0] * dey_v[:, p_ind]
+                + dh_v[:, 0] * ey[:, p_ind]
+                - h[:, 1] * dex_v[:, p_ind]
+                - dh_v[:, 1] * ex[:, p_ind]
+            )
+            dbot_v = (
+                ex[:, 0] * dey_v[:, 1]
+                + dex_v[:, 0] * ey[:, 1]
+                - ex[:, 1] * dey_v[:, 0]
+                - dex_v[:, 1] * ey[:, 0]
+            )
+            adm_deriv = (bot * dtop_v - top * dbot_v) / (bot * bot)
 
         return getattr(adm_deriv, self.component)
 
@@ -1047,24 +1186,1153 @@ class Admittance(_ElectricAndMagneticReceiver):
         )
 
 
+def _eval_root_gram_determinant(receiver, src, mesh, f):
+    """Evaluate the square root of the determinant of the Gram matrix.
+
+    The definition of the datum is provided in the documentation for the
+    ``RootGramDeterminant`` receiver class.
+
+    Parameters
+    ----------
+    receiver : simpeg.electromagnetics.frequency_domain.receivers.BaseRx
+        An NSEM receiver.
+    src : simpeg.electromagnetics.frequency_domain.sources.BaseFDEMSrc
+        An NSEM source.
+    mesh : discretize.base.BaseMesh
+        Mesh on which the forward problem is discretized.
+    f : simpeg.electromagnetics.frequency_domain.fields.FieldFDEM
+        The NSEM fields.
+    """
+    if mesh.dim < 3:
+        raise NotImplementedError(
+            "'RootGramDeterminant' transfer function only for 3D simulation."
+        )
+
+    h = f[src, "h"]
+    hx = receiver.getP(mesh, "Fx", 0) @ h
+    hy = receiver.getP(mesh, "Fy", 0) @ h
+    hz = receiver.getP(mesh, "Fz", 0) @ h
+
+    match receiver._base_type:
+        case "magnetic":
+            bx = receiver.getP(mesh, "Fx", 1) @ h
+            by = receiver.getP(mesh, "Fy", 1) @ h
+        case "electric":
+            e = f[src, "e"]
+            bx = receiver.getP(mesh, "Ex", 1) @ e
+            by = receiver.getP(mesh, "Ey", 1) @ e
+        case _:  # pragma: nocover
+            raise ValueError()
+
+    # abs(det(H H*))
+    top = (
+        (np.abs(hx[:, 0] ** 2) + np.abs(hy[:, 0] ** 2) + np.abs(hz[:, 0] ** 2))
+        * (np.abs(hx[:, 1] ** 2) + np.abs(hy[:, 1] ** 2) + np.abs(hz[:, 1] ** 2))
+    ) - np.abs(
+        hx[:, 0] * hx[:, 1].conjugate()
+        + hy[:, 0] * hy[:, 1].conjugate()
+        + hz[:, 0] * hz[:, 1].conjugate()
+    ) ** 2
+
+    # abs(det(B B*)) = abs(det(B))**2
+    bot = np.abs(bx[:, 0] * by[:, 1] - bx[:, 1] * by[:, 0]) ** 2
+
+    return np.sqrt(top / bot)
+
+
+def _eval_root_gram_determinant_deriv(
+    receiver, src, mesh, f, du_dm_v=None, v=None, adjoint=False, scale=1.0
+):
+    """Evaluate the derivative for the square root of the determinant of the Gram matrix.
+
+    The definition of the datum is provided in the documentation for the
+    ``RootGramDeterminant`` receiver class.
+
+    Parameters
+    ----------
+    receiver : simpeg.electromagnetics.frequency_domain.receivers.BaseRx
+        An NSEM receiver.
+    src : simpeg.electromagnetics.frequency_domain.sources.BaseFDEMSrc
+        An NSEM source.
+    mesh : discretize.base.BaseMesh
+        Mesh on which the forward problem is discretized.
+    f : simpeg.electromagnetics.frequency_domain.fields.FieldFDEM
+        The NSEM fields.
+    du_dm_v : numpy.ndarray
+        The derivative of the fields on the mesh with respect to the model,
+        times a vector.
+    v : numpy.ndarray, optional
+        The vector which being multiplied.
+    adjoint : bool
+        If ``True``, return the ajoint.
+    scale : float, optional
+        Apply scaling constant to derivative within the function.
+    """
+    if mesh.dim < 3:
+        raise NotImplementedError(
+            "'AmplitudeSquared' transfer function only for 3D simulation."
+        )
+
+    h = f[src, "h"]
+    Phx = receiver.getP(mesh, "Fx", 0)
+    Phy = receiver.getP(mesh, "Fy", 0)
+    Phz = receiver.getP(mesh, "Fz", 0)
+
+    hx = Phx @ h
+    hy = Phy @ h
+    hz = Phz @ h
+
+    match receiver._base_type:
+        case "magnetic":
+            Pbx = receiver.getP(mesh, "Fx", 1)
+            Pby = receiver.getP(mesh, "Fy", 1)
+            bx = Pbx @ h
+            by = Pby @ h
+        case "electric":
+            Pbx = receiver.getP(mesh, "Ex", 1)
+            Pby = receiver.getP(mesh, "Ey", 1)
+            e = f[src, "e"]
+            bx = Pbx @ e
+            by = Pby @ e
+        case _:  # pragma: nocover
+            raise ValueError()
+
+    # Entries of HH*. Note that vec_h21 = conj(vec_h12)
+    vec_h11 = np.abs(hx[:, 0]) ** 2 + np.abs(hy[:, 0]) ** 2 + np.abs(hz[:, 0]) ** 2
+    vec_h22 = np.abs(hx[:, 1]) ** 2 + np.abs(hy[:, 1]) ** 2 + np.abs(hz[:, 1]) ** 2
+    vec_h12 = (
+        hx[:, 0] * hx[:, 1].conjugate()
+        + hy[:, 0] * hy[:, 1].conjugate()
+        + hz[:, 0] * hz[:, 1].conjugate()
+    )
+    top = vec_h11 * vec_h22 - np.abs(vec_h12) ** 2  # abs(det(H H*))
+
+    vec_b11 = np.abs(bx[:, 0]) ** 2 + np.abs(by[:, 0]) ** 2
+    vec_b22 = np.abs(bx[:, 1]) ** 2 + np.abs(by[:, 1]) ** 2
+    vec_b12 = bx[:, 0] * bx[:, 1].conjugate() + by[:, 0] * by[:, 1].conjugate()
+    bot = vec_b11 * vec_b22 - np.abs(vec_b12) ** 2  # abs(det(H H*))
+
+    factor = 0.5 * scale / np.sqrt(top / bot)
+
+    # ADJOINT
+    if adjoint:
+
+        # J_T * v = d_top_T * a_v + d_bot_T * b
+        a_v = factor * v / bot  # term 1
+        b_v = -factor * top * v / bot**2  # term 2
+
+        a_v = np.repeat(mkvc(a_v, n_dims=2), 2, axis=-1)
+        b_v = np.repeat(mkvc(b_v, n_dims=2), 2, axis=-1)
+
+        # derivatives for det(HH*)
+        px = (
+            np.c_[
+                vec_h22 * hx[:, 0].conjugate() - (vec_h12 * hx[:, 1]).conjugate(),
+                vec_h11 * hx[:, 1].conjugate() - vec_h12 * hx[:, 0].conjugate(),
+            ]
+            * a_v
+        )
+        py = (
+            np.c_[
+                vec_h22 * hy[:, 0].conjugate() - (vec_h12 * hy[:, 1]).conjugate(),
+                vec_h11 * hy[:, 1].conjugate() - vec_h12 * hy[:, 0].conjugate(),
+            ]
+            * a_v
+        )
+        pz = (
+            np.c_[
+                vec_h22 * hz[:, 0].conjugate() - (vec_h12 * hz[:, 1]).conjugate(),
+                vec_h11 * hz[:, 1].conjugate() - vec_h12 * hz[:, 0].conjugate(),
+            ]
+            * a_v
+        )
+
+        # derivatives for det(BB*)
+        qx = (
+            np.c_[
+                vec_b22 * bx[:, 0].conjugate() - (vec_b12 * bx[:, 1]).conjugate(),
+                vec_b11 * bx[:, 1].conjugate() - vec_b12 * bx[:, 0].conjugate(),
+            ]
+            * b_v
+        )
+        qy = (
+            np.c_[
+                vec_b22 * by[:, 0].conjugate() - (vec_b12 * by[:, 1]).conjugate(),
+                vec_b11 * by[:, 1].conjugate() - vec_b12 * by[:, 0].conjugate(),
+            ]
+            * b_v
+        )
+
+        h_v = 2 * (Phx.T @ px + Phy.T @ py + Phz.T @ pz)
+        b_v = 2 * (Pbx.T @ qx + Pby.T @ qy)
+
+        match receiver._base_type:
+            case "magnetic":
+                return f._hDeriv(src, None, h_v + b_v, adjoint=True)
+            case "electric":
+                fu_b_v, fm_b_v = f._eDeriv(src, None, b_v, adjoint=True)
+                fu_h_v, fm_h_v = f._hDeriv(src, None, h_v, adjoint=True)
+                return fu_b_v + fu_h_v, fm_b_v + fm_h_v
+            case _:  # pragma: nocover
+                raise ValueError()
+
+    # JVEC
+    dh_v = f._hDeriv(src, du_dm_v, v, adjoint=False)
+    dhx_v = Phx @ dh_v
+    dhy_v = Phy @ dh_v
+    dhz_v = Phz @ dh_v
+
+    match receiver._base_type:
+        case "magnetic":
+            db_v = dh_v
+        case "electric":
+            db_v = f._eDeriv(src, du_dm_v, v, adjoint=False)
+        case _:  # pragma: nocover
+            raise ValueError()
+
+    dbx_v = Pbx @ db_v
+    dby_v = Pby @ db_v
+
+    # When taking derivative of hh* wrt the model, imaginary components
+    # cancel and its 2x the real of the conjugate x the deriv
+    dtop_v = (
+        (
+            2
+            * vec_h11
+            * (
+                hx[:, 1].conjugate() * dhx_v[:, 1]
+                + hy[:, 1].conjugate() * dhy_v[:, 1]
+                + hz[:, 1].conjugate() * dhz_v[:, 1]
+            )
+        ).real
+        + (
+            2
+            * vec_h22
+            * (
+                hx[:, 0].conjugate() * dhx_v[:, 0]
+                + hy[:, 0].conjugate() * dhy_v[:, 0]
+                + hz[:, 0].conjugate() * dhz_v[:, 0]
+            )
+        ).real
+        - (
+            2
+            * vec_h12.conjugate()
+            * (
+                hx[:, 1].conjugate() * dhx_v[:, 0]
+                + hy[:, 1].conjugate() * dhy_v[:, 0]
+                + hz[:, 1].conjugate() * dhz_v[:, 0]
+                + hx[:, 0] * dhx_v[:, 1].conjugate()
+                + hy[:, 0] * dhy_v[:, 1].conjugate()
+                + hz[:, 0] * dhz_v[:, 1].conjugate()
+            )
+        ).real
+    )
+
+    dbot_v = (
+        (
+            2
+            * vec_b11
+            * (bx[:, 1].conjugate() * dbx_v[:, 1] + by[:, 1].conjugate() * dby_v[:, 1])
+        ).real
+        + (
+            2
+            * vec_b22
+            * (bx[:, 0].conjugate() * dbx_v[:, 0] + by[:, 0].conjugate() * dby_v[:, 0])
+        ).real
+        - (
+            2
+            * vec_b12.conjugate()
+            * (
+                bx[:, 1].conjugate() * dbx_v[:, 0]
+                + by[:, 1].conjugate() * dby_v[:, 0]
+                + bx[:, 0] * dbx_v[:, 1].conjugate()
+                + by[:, 0] * dby_v[:, 1].conjugate()
+            )
+        ).real
+    )
+
+    return factor * (bot * dtop_v - top * dbot_v) / (bot * bot)
+
+
+def _eval_cross_product_amplitude(receiver, src, mesh, f):
+    """Evaluate the cross product amplitude.
+
+    The definition of the datum is provided in the documentation for the
+    ``CrossProductAmplitude`` receiver class.
+
+    Parameters
+    ----------
+    receiver : simpeg.electromagnetics.frequency_domain.receivers.BaseRx
+        An NSEM receiver.
+    src : simpeg.electromagnetics.frequency_domain.sources.BaseFDEMSrc
+        An NSEM source.
+    mesh : discretize.base.BaseMesh
+        Mesh on which the forward problem is discretized.
+    f : simpeg.electromagnetics.frequency_domain.fields.FieldFDEM
+        The NSEM fields.
+    """
+    if mesh.dim < 3:
+        raise NotImplementedError(
+            "'CrossProductAmplitude' transfer function only for 3D simulation."
+        )
+
+    h = f[src, "h"]
+    hx = receiver.getP(mesh, "Fx", 0) @ h
+    hy = receiver.getP(mesh, "Fy", 0) @ h
+    hz = receiver.getP(mesh, "Fz", 0) @ h
+
+    match receiver._base_type:
+        case "magnetic":
+            bx = receiver.getP(mesh, "Fx", 1) @ h
+            by = receiver.getP(mesh, "Fy", 1) @ h
+        case "electric":
+            e = f[src, "e"]
+            bx = receiver.getP(mesh, "Ex", 1) @ e
+            by = receiver.getP(mesh, "Ey", 1) @ e
+        case _:  # pragma: nocover
+            raise ValueError()
+
+    top_12 = np.abs(hx[:, 0] * hy[:, 1] - hy[:, 0] * hx[:, 1]) ** 2  # abs(det(H12))**2
+    top_13 = np.abs(hx[:, 0] * hz[:, 1] - hz[:, 0] * hx[:, 1]) ** 2  # abs(det(H13))**2
+    top_23 = np.abs(hy[:, 0] * hz[:, 1] - hz[:, 0] * hy[:, 1]) ** 2  # abs(det(H23))**2
+
+    # abs(det(B B*)) = abs(det(B))**2
+    bot = np.abs(bx[:, 0] * by[:, 1] - bx[:, 1] * by[:, 0]) ** 2
+
+    return np.sqrt((top_12 + top_13 + top_23) / bot)
+
+
+def _eval_cross_product_amplitude_deriv(
+    receiver, src, mesh, f, du_dm_v=None, v=None, adjoint=False, scale=1.0
+):
+    """Evaluate the derivative for the amplitude of the cross product.
+
+    The definition of the datum is provided in the documentation for the
+    ``CrossProductAmplitude`` receiver class.
+
+    Parameters
+    ----------
+    receiver : simpeg.electromagnetics.frequency_domain.receivers.BaseRx
+        An NSEM receiver.
+    src : simpeg.electromagnetics.frequency_domain.sources.BaseFDEMSrc
+        An NSEM source.
+    mesh : discretize.base.BaseMesh
+        Mesh on which the forward problem is discretized.
+    f : simpeg.electromagnetics.frequency_domain.fields.FieldFDEM
+        The NSEM fields.
+    du_dm_v : numpy.ndarray
+        The derivative of the fields on the mesh with respect to the model,
+        times a vector.
+    v : numpy.ndarray, optional
+        The vector which being multiplied.
+    adjoint : bool
+        If ``True``, return the ajoint.
+    scale : float, optional
+        Apply scaling constant to derivative within the function.
+    """
+    if mesh.dim < 3:
+        raise NotImplementedError(
+            "'AmplitudeSquared' transfer function only for 3D simulation."
+        )
+
+    h = f[src, "h"]
+    Phx = receiver.getP(mesh, "Fx", 0)
+    Phy = receiver.getP(mesh, "Fy", 0)
+    Phz = receiver.getP(mesh, "Fz", 0)
+
+    hx = Phx @ h
+    hy = Phy @ h
+    hz = Phz @ h
+
+    match receiver._base_type:
+        case "magnetic":
+            Pbx = receiver.getP(mesh, "Fx", 1)
+            Pby = receiver.getP(mesh, "Fy", 1)
+            bx = Pbx @ h
+            by = Pby @ h
+        case "electric":
+            Pbx = receiver.getP(mesh, "Ex", 1)
+            Pby = receiver.getP(mesh, "Ey", 1)
+            e = f[src, "e"]
+            bx = Pbx @ e
+            by = Pby @ e
+        case _:  # pragma: nocover
+            raise ValueError()
+
+    # Entries of HH*. Note that vec_h21 = conj(vec_h12)
+    det_h12 = hx[:, 0] * hy[:, 1] - hy[:, 0] * hx[:, 1]  # det(H12)
+    det_h13 = hx[:, 0] * hz[:, 1] - hz[:, 0] * hx[:, 1]  # det(H13)
+    det_h23 = hy[:, 0] * hz[:, 1] - hz[:, 0] * hy[:, 1]  # det(H23)
+    top = np.abs(det_h12) ** 2 + np.abs(det_h13) ** 2 + np.abs(det_h23) ** 2
+
+    # abs(det(B B*)) = abs(det(B))**2
+    det_b = bx[:, 0] * by[:, 1] - bx[:, 1] * by[:, 0]
+    bot = np.abs(det_b) ** 2
+
+    factor = 0.5 * scale / np.sqrt(top / bot)
+
+    # ADJOINT
+    if adjoint:
+        a_v = np.c_[v] / (bot / factor)[:, None]  # term 1
+        b_v = np.c_[v] * (-factor * top / (bot**2))[:, None]  # term 2
+
+        # derivatives for det(HH*)
+        px = np.einsum(
+            "ij,ik->ijk",
+            a_v,
+            np.c_[
+                det_h12.conjugate() * hy[:, 1] + det_h13.conjugate() * hz[:, 1],
+                -det_h12.conjugate() * hy[:, 0] - det_h13.conjugate() * hz[:, 0],
+            ],
+        ).reshape((hx.shape[0], -1))
+        py = np.einsum(
+            "ij,ik->ijk",
+            a_v,
+            np.c_[
+                -det_h12.conjugate() * hx[:, 1] + det_h23.conjugate() * hz[:, 1],
+                det_h12.conjugate() * hx[:, 0] - det_h23.conjugate() * hz[:, 0],
+            ],
+        ).reshape((hy.shape[0], -1))
+        pz = np.einsum(
+            "ij,ik->ijk",
+            a_v,
+            np.c_[
+                -det_h13.conjugate() * hx[:, 1] - det_h23.conjugate() * hy[:, 1],
+                det_h13.conjugate() * hx[:, 0] + det_h23.conjugate() * hy[:, 0],
+            ],
+        ).reshape((hz.shape[0], -1))
+
+        # derivatives for det(BB*)
+        qx = np.einsum(
+            "ij,ik->ijk",
+            b_v,
+            np.c_[det_b.conjugate() * by[:, 1], -det_b.conjugate() * by[:, 0]],
+        ).reshape((bx.shape[0], -1))
+        qy = np.einsum(
+            "ij,ik->ijk",
+            b_v,
+            np.c_[-det_b.conjugate() * bx[:, 1], det_b.conjugate() * bx[:, 0]],
+        ).reshape((by.shape[0], -1))
+
+        h_v = 2 * (
+            Phx.T @ csr_matrix(px) + Phy.T @ csr_matrix(py) + Phz.T @ csr_matrix(pz)
+        )
+        b_v = 2 * (Pbx.T @ csr_matrix(qx) + Pby.T @ csr_matrix(qy))
+
+        match receiver._base_type:
+            case "magnetic":
+                return f._hDeriv(src, None, h_v + b_v, adjoint=True)
+            case "electric":
+                fu_b_v, fm_b_v = f._eDeriv(src, None, b_v, adjoint=True)
+                fu_h_v, fm_h_v = f._hDeriv(src, None, h_v, adjoint=True)
+                return fu_b_v + fu_h_v, fm_b_v + fm_h_v
+            case _:  # pragma: nocover
+                raise ValueError()
+
+    # JVEC
+    dh_v = f._hDeriv(src, du_dm_v, v, adjoint=False)
+    dhx_v = Phx @ dh_v
+    dhy_v = Phy @ dh_v
+    dhz_v = Phz @ dh_v
+
+    if receiver._base_type == "magnetic":
+        db_v = dh_v
+    else:
+        db_v = f._eDeriv(src, du_dm_v, v, adjoint=False)
+
+    dbx_v = Pbx @ db_v
+    dby_v = Pby @ db_v
+
+    # cancel and its 2x the real of the conjugate x the deriv
+    dtop_v = (
+        2
+        * (
+            det_h12.conjugate()
+            * (
+                dhx_v[:, 0] * hy[:, 1]
+                + hx[:, 0] * dhy_v[:, 1]
+                - dhy_v[:, 0] * hx[:, 1]
+                - hy[:, 0] * dhx_v[:, 1]
+            )
+            + det_h13.conjugate()
+            * (
+                dhx_v[:, 0] * hz[:, 1]
+                + hx[:, 0] * dhz_v[:, 1]
+                - dhz_v[:, 0] * hx[:, 1]
+                - hz[:, 0] * dhx_v[:, 1]
+            )
+            + det_h23.conjugate()
+            * (
+                dhy_v[:, 0] * hz[:, 1]
+                + hy[:, 0] * dhz_v[:, 1]
+                - dhz_v[:, 0] * hy[:, 1]
+                - hz[:, 0] * dhy_v[:, 1]
+            )
+        ).real
+    )
+
+    dbot_v = (
+        2
+        * (
+            det_b.conjugate()
+            * (
+                dbx_v[:, 0] * by[:, 1]
+                + bx[:, 0] * dby_v[:, 1]
+                - dby_v[:, 0] * bx[:, 1]
+                - by[:, 0] * dbx_v[:, 1]
+            )
+        ).real
+    )
+
+    return factor * (bot * dtop_v - top * dbot_v) / (bot * bot)
+
+
+def _eval_horizontal_determinant(receiver, src, mesh, f):
+    """Evaluate the determinant of the horizontal transfer functions.
+
+    The definition of the datum is provided in the documentation for the
+    ``HorizontalDeterminant`` receiver class.
+
+    Parameters
+    ----------
+    receiver : simpeg.electromagnetics.frequency_domain.receivers.BaseRx
+        An NSEM receiver.
+    src : simpeg.electromagnetics.frequency_domain.sources.BaseFDEMSrc
+        An NSEM source.
+    mesh : discretize.base.BaseMesh
+        Mesh on which the forward problem is discretized.
+    f : simpeg.electromagnetics.frequency_domain.fields.FieldFDEM
+        The NSEM fields.
+    """
+    if mesh.dim < 3:
+        raise NotImplementedError(
+            "'AmplitudeRatio' transfer function only for 3D simulation."
+        )
+
+    h = f[src, "h"]
+    hx = receiver.getP(mesh, "Fx", 0) @ h
+    hy = receiver.getP(mesh, "Fy", 0) @ h
+
+    match receiver._base_type:
+        case "magnetic":
+            bx = receiver.getP(mesh, "Fx", 1) @ h
+            by = receiver.getP(mesh, "Fy", 1) @ h
+        case "electric":
+            e = f[src, "e"]
+            bx = receiver.getP(mesh, "Ex", 1) @ e
+            by = receiver.getP(mesh, "Ey", 1) @ e
+        case _:  # pragma: nocover
+            raise ValueError()
+
+    top = hx[:, 0] * hy[:, 1] - hx[:, 1] * hy[:, 0]
+    bot = bx[:, 0] * by[:, 1] - bx[:, 1] * by[:, 0]
+
+    if receiver._component == "amp":
+        return np.abs(top / bot)
+    return top / bot
+
+
+def _eval_horizontal_determinant_deriv(
+    receiver, src, mesh, f, du_dm_v=None, v=None, adjoint=False, scale=1.0
+):
+    """Evaluate the derivative for the horizontal determinant transfer function.
+
+    The definition of the datum is provided in the documentation for the
+    ``HorizontalDeterminant`` receiver class.
+
+    Parameters
+    ----------
+    receiver : simpeg.electromagnetics.frequency_domain.receivers.BaseRx
+        An NSEM receiver.
+    src : simpeg.electromagnetics.frequency_domain.sources.BaseFDEMSrc
+        An NSEM source.
+    mesh : discretize.base.BaseMesh
+        Mesh on which the forward problem is discretized.
+    f : simpeg.electromagnetics.frequency_domain.fields.FieldFDEM
+        The NSEM fields.
+    du_dm_v : numpy.ndarray
+        The derivative of the fields on the mesh with respect to the model,
+        times a vector.
+    v : numpy.ndarray, optional
+        The vector which being multiplied.
+    adjoint : bool
+        If ``True``, return the ajoint.
+    scale : float, optional
+        Apply scaling constant to derivative within the function.
+    """
+    if mesh.dim < 3:
+        raise NotImplementedError(
+            "'HorizontalDeterminant' transfer function only for 3D simulation."
+        )
+
+    h = f[src, "h"]
+    Phx = receiver.getP(mesh, "Fx", 0)
+    Phy = receiver.getP(mesh, "Fy", 0)
+
+    hx = Phx @ h
+    hy = Phy @ h
+
+    match receiver._base_type:
+        case "magnetic":
+            Pbx = receiver.getP(mesh, "Fx", 1)
+            Pby = receiver.getP(mesh, "Fy", 1)
+            bx = Pbx @ h
+            by = Pby @ h
+        case "electric":
+            Pbx = receiver.getP(mesh, "Ex", 1)
+            Pby = receiver.getP(mesh, "Ey", 1)
+            e = f[src, "e"]
+            bx = Pbx @ e
+            by = Pby @ e
+        case _:  # pragma: nocover
+            raise ValueError()
+
+    top = hx[:, 0] * hy[:, 1] - hx[:, 1] * hy[:, 0]
+    bot = bx[:, 0] * by[:, 1] - bx[:, 1] * by[:, 0]
+
+    # ADJOINT
+    if adjoint:
+
+        if receiver._component == "amp":
+            factor = scale * top / bot
+            v = (factor.real - 1j * factor.imag) * v / np.abs(top / bot)
+        elif receiver.component == "imag":
+            v = -1j * v
+
+        # J_T * v = d_top_T * a_v + d_bot_T * b
+        a_v = v / bot  # term 1
+        b_v = -top * v / bot**2  # term 2
+
+        hx_v = np.c_[hy[:, 1], -hy[:, 0]] * a_v[:, None]  # terms dex in bot
+        hy_v = np.c_[-hx[:, 1], hx[:, 0]] * a_v[:, None]  # terms dey in bot
+        h_v = Phx.T @ hx_v + Phy.T @ hy_v
+
+        bx_v = np.c_[by[:, 1], -by[:, 0]] * b_v[:, None]  # terms dex in bot
+        by_v = np.c_[-bx[:, 1], bx[:, 0]] * b_v[:, None]  # terms dey in bot
+        b_v = Pbx.T @ bx_v + Pby.T @ by_v
+
+        match receiver._base_type:
+            case "magnetic":
+                return f._hDeriv(src, None, h_v + b_v, adjoint=True)
+            case "electric":
+                fu_b_v, fm_b_v = f._eDeriv(src, None, b_v, adjoint=True)
+                fu_h_v, fm_h_v = f._hDeriv(src, None, h_v, adjoint=True)
+                return fu_b_v + fu_h_v, fm_b_v + fm_h_v
+            case _:  # pragma: nocover
+                raise ValueError()
+
+    # JVEC
+    dh_v = f._hDeriv(src, du_dm_v, v, adjoint=False)
+    dhx_v = Phx @ dh_v
+    dhy_v = Phy @ dh_v
+
+    match receiver._base_type:
+        case "magnetic":
+            db_v = dh_v
+        case "electric":
+            db_v = f._eDeriv(src, du_dm_v, v, adjoint=False)
+        case _:  # pragma: nocover
+            raise ValueError()
+
+    dbx_v = Pbx @ db_v
+    dby_v = Pby @ db_v
+
+    dtop_v = (
+        hx[:, 0] * dhy_v[:, 1]
+        + dhx_v[:, 0] * hy[:, 1]
+        - hy[:, 0] * dhx_v[:, 1]
+        - dhy_v[:, 0] * hx[:, 1]
+    )
+    dbot_v = (
+        bx[:, 0] * dby_v[:, 1]
+        + dbx_v[:, 0] * by[:, 1]
+        - by[:, 0] * dbx_v[:, 1]
+        - dby_v[:, 0] * bx[:, 1]
+    )
+
+    deriv = (bot * dtop_v - top * dbot_v) / (bot * bot)
+
+    if receiver._component == "amp":
+        factor = scale * top / bot
+        return (factor.real * deriv.real + factor.imag * deriv.imag) / np.abs(top / bot)
+
+    return getattr(deriv, receiver.component)
+
+
+class RootGramDeterminant(_BaseOrientationInvariant):
+    r"""Orientation invariant transfer function using the root Gram matrix determinant.
+
+    Receiver class for simulating a data that are invariant to sensor orientation
+    for either an electric or magnetic base station. The datum is based on taking
+    the amplitude of the determinant of Gram matrix for transfer functions
+    derived from three-component airborne magnetic fields. For a magnetic base
+    station the quantity is unitless. For an electric base station, the units
+    are :math:`A^2/V^2`.
+    See the *Notes* section for a formal definition of the datum.
+
+    Parameters
+    ----------
+    locations_h : (n_loc, n_dim) array_like
+        Locations where the roving magnetic fields are measured.
+    locations_base : (n_loc, n_dim) array_like, optional
+        Locations where the base station magnetic fields are measured. Defaults to
+        the same locations as the roving magnetic fields measurements,
+        `locations_h`.
+    base_type : {'magnetic', 'electric'}, optional
+        Whether magnetic or electric fields are measured at the base station.
+        For magnetic fields, the quantity is unitless. For electric fields,
+        the quantity has units A/V.
+    storeProjections : bool, optional
+        Whether to cache to internal projection matrices.
+
+    Notes
+    -----
+
+    Magnetic base station
+    ~~~~~~~~~~~~~~~~~~~~~
+    Consider an acquisition system that measures 3-component magnetic fields
+    in the air and magnetic fields at a base station. The fundamental set of
+    transfer functions (i.e. tippers) that can be generated from these
+    measurements is given by:
+
+    .. math::
+
+        \begin{bmatrix}
+        T_{xx} & T_{yx} & T_{zx} \\
+        T_{xy} & T_{yy} & T_{zy}
+        \end{bmatrix}
+        =
+        \begin{bmatrix}
+        H_x^{(x)} & H_y^{(x)}
+        \\ H_x^{(y)} & H_y^{(y)}
+        \end{bmatrix}_b^{-1}
+        \,
+        \begin{bmatrix}
+        H_x^{(x)} & H_y^{(x)} & H_z^{(x)} \\
+        H_x^{(y)} & H_y^{(y)} & H_z^{(y)}
+        \end{bmatrix}_r
+
+    where subscript :math:`b` denotes the base station location and subscript
+    :math:`r` denotes the mobile receiver location.
+
+    For this system, the orientation invariant transfer function is defined as:
+
+    .. math::
+
+        \widehat{\mathbf{T}} = \bigg (
+        \frac{\det (\mathbf{H_r H_r^\dagger}) }{\det (\mathbf{H_b H_b^\dagger})}
+        \bigg )^{1/2}
+
+    where :math:`\dagger` denotes the Hermitian.
+
+
+    Electric base station
+    ~~~~~~~~~~~~~~~~~~~~~
+    Now consider an acquisition system that measures 3-component magnetic fields
+    in the air and electric fields at a base station. The fundamental set of
+    transfer functions (i.e. admittances) that can be generated from these
+    measurements is given by:
+
+    .. math::
+
+        \begin{bmatrix}
+        Y_{xx} & Y_{yx} & Y_{zx} \\
+        Y_{xy} & Y_{yy} & Y_{zy}
+        \end{bmatrix}
+        =
+        \begin{bmatrix}
+        E_x^{(x)} & E_y^{(x)} \\
+        E_x^{(y)} & E_y^{(y)}
+        \end{bmatrix}_b^{-1}
+        \,
+        \begin{bmatrix}
+        H_x^{(x)} & H_y^{(x)} & H_z^{(x)} \\
+        H_x^{(y)} & H_y^{(y)} & H_z^{(y)}
+        \end{bmatrix}_r
+
+    For this system, the orientation invariant transfer function is defined as:
+
+    .. math::
+
+        \widehat{\mathbf{Y}} = \bigg (
+        \frac{\det (\mathbf{H_r H_r^\dagger}) }{\det (\mathbf{E_b E_b^\dagger})}
+        \bigg )^{1/2}
+
+    """
+
+    _loc_names = ("Roving magnetic field", "Base station field")
+
+    def __init__(
+        self,
+        locations_h,
+        locations_base=None,
+        base_type="magnetic",
+        storeProjections=False,
+    ):
+        if locations_base is None:
+            locations_base = locations_h
+        super().__init__(
+            locations1=locations_h,
+            locations2=locations_base,
+            base_type=base_type,
+            storeProjections=storeProjections,
+        )
+
+    @property
+    def locations_h(self):
+        """Roving magnetic field measurement locations.
+
+        Returns
+        -------
+        numpy.ndarray
+            Roving locations where the magnetic field is measured for all receiver data.
+        """
+        return self._locations[0]
+
+    @property
+    def locations_base(self):
+        """Base station magnetic field measurement locations.
+
+        Returns
+        -------
+        numpy.ndarray
+            Base station locations where the horizontal magnetic fields are measured.
+        """
+        return self._locations[1]
+
+    def eval(self, src, mesh, f):  # noqa: A003 D102
+        # Docstring inherited from parent class (BaseNaturalSourceRX)
+        return _eval_root_gram_determinant(self, src, mesh, f)
+
+    def evalDeriv(  # noqa: D102
+        self, src, mesh, f, du_dm_v=None, v=None, adjoint=False
+    ):
+        # Docstring inherited from parent class (BaseNaturalSourceRX).
+        return _eval_root_gram_determinant_deriv(
+            self, src, mesh, f, du_dm_v=du_dm_v, v=v, adjoint=adjoint
+        )
+
+
+class CrossProductAmplitude(RootGramDeterminant):
+    r"""Orientation invariant transfer function from the cross-product amplitude.
+
+    Receiver class for simulating a data that are invariant to sensor orientation
+    for either an electric or magnetic base station. The datum is based on taking
+    the amplitude of the determinant of the cross-product of transfer functions
+    derived from three-component airborne magnetic fields. For a magnetic base
+    station the quantity is unitless. For an electric base station, the units
+    are :math:`A^2/V^2`.
+    See the *Notes* section for a formal definition of the datum.
+
+    Parameters
+    ----------
+    locations_h : (n_loc, n_dim) array_like
+        Locations where the roving magnetic fields are measured.
+    locations_base : (n_loc, n_dim) array_like, optional
+        Locations where the base station magnetic fields are measured. Defaults to
+        the same locations as the roving magnetic fields measurements,
+        `locations_h`.
+    base_type : {'magnetic', 'electric'}, optional
+        Whether magnetic or electric fields are measured at the base station.
+        For magnetic fields, the quantity is unitless. For electric fields,
+        the quantity has units A/V.
+    storeProjections : bool, optional
+        Whether to cache to internal projection matrices.
+
+    Notes
+    -----
+
+    Magnetic base station
+    ~~~~~~~~~~~~~~~~~~~~~
+    Consider an acquisition system that measures 3-component magnetic fields
+    in the air and magnetic fields at a base station. The fundamental set of
+    transfer functions (i.e. tippers) that can be generated from these
+    measurements is given by:
+
+    .. math::
+
+        \begin{bmatrix}
+        T_{xx} & T_{yx} & T_{zx} \\
+        T_{xy} & T_{yy} & T_{zy}
+        \end{bmatrix}
+        =
+        \begin{bmatrix}
+        H_x^{(x)} & H_y^{(x)} \\
+        H_x^{(y)} & H_y^{(y)}
+        \end{bmatrix}_b^{-1}
+        \,
+        \begin{bmatrix}
+        H_x^{(x)} & H_y^{(x)} & H_z^{(x)} \\
+        H_x^{(y)} & H_y^{(y)} & H_z^{(y)}
+        \end{bmatrix}_r
+
+    where subscript :math:`b` denotes the base station location and subscript
+    :math:`r` denotes the mobile receiver location.
+
+    For this system, the orientation invariant transfer function is defined as:
+
+    .. math::
+
+        | \mathbf{T} | = \bigg (
+        p_x p_x^\ast + p_y p_y^\ast + p_z p_z^\ast
+        \bigg )^{1/2}
+
+    where :math:`\ast` denotes the complex conjugate and
+
+    .. math::
+
+        \begin{split}
+        p_x &= T_{yx}T_{zy} - T_{zx}T_{yy}\\
+        p_y &= T_{zx}T_{xy} - T_{xx}T_{zy}\\
+        p_z &= T_{xx}T_{yy} - T_{yx}T_{xy}
+        \end{split}
+
+    Electric base station
+    ~~~~~~~~~~~~~~~~~~~~~
+    Now consider an acquisition system that measures 3-component magnetic fields
+    in the air and electric fields at a base station. The fundamental set of
+    transfer functions (i.e. admittances) that can be generated from these
+    measurements is given by:
+
+    .. math::
+        \begin{bmatrix}
+        Y_{xx} & Y_{yx} & Y_{zx} \\
+        Y_{xy} & Y_{yy} & Y_{zy}
+        \end{bmatrix}
+        =
+        \begin{bmatrix}
+        E_x^{(x)} & E_y^{(x)} \\
+        E_x^{(y)} & E_y^{(y)}
+        \end{bmatrix}_b^{-1}
+        \,
+        \begin{bmatrix}
+        H_x^{(x)} & H_y^{(x)} & H_z^{(x)} \\
+        H_x^{(y)} & H_y^{(y)} & H_z^{(y)}
+        \end{bmatrix}_r
+
+    For this system, the orientation invariant transfer function is defined as:
+
+    .. math::
+        | \mathbf{Y} | = \bigg (
+        q_x q_x^\ast + q_y q_y^\ast + q_z q_z^\ast
+        \bigg )^{1/2}
+
+    where :math:`\ast` denotes the complex conjugate and
+
+    .. math::
+        \begin{split}
+        p_x &= Y_{yx}Y_{zy} - Y_{zx}Y_{yy}\\
+        p_y &= Y_{zx}Y_{xy} - Y_{xx}Y_{zy}\\
+        p_z &= Y_{xx}Y_{yy} - Y_{yx}Y_{xy}
+        \end{split}
+    """
+
+    _loc_names = ("Roving magnetic field", "Base station field")
+
+    def __init__(
+        self,
+        locations_h,
+        locations_base=None,
+        base_type="magnetic",
+        storeProjections=False,
+    ):
+        super().__init__(
+            locations_h=locations_h,
+            locations_base=locations_base,
+            base_type=base_type,
+            storeProjections=storeProjections,
+        )
+
+    def eval(self, src, mesh, f):  # noqa: D102 A003
+        # Docstring inherited from parent class (BaseNaturalSourceRX).
+        return _eval_cross_product_amplitude(self, src, mesh, f)
+
+    def evalDeriv(  # noqa: D102
+        self, src, mesh, f, du_dm_v=None, v=None, adjoint=False
+    ):
+        # Docstring inherited from parent class (BaseNaturalSourceRX).
+        return _eval_cross_product_amplitude_deriv(
+            self, src, mesh, f, du_dm_v=du_dm_v, v=v, adjoint=adjoint
+        )
+
+
+class HorizontalDeterminant(RootGramDeterminant):
+    r"""Determinant of the horizontal transfer functions.
+
+    Receiver class for simulating a data that are invariant to airborne sensor
+    orientation about the tow cable for either an electric or magnetic base station.
+    The datum is derived by taking the determinant of the horizontal transfer
+    functions. For a magnetic base station the quantity is unitless. For an electric
+    base station, the units are :math:`A^2/V^2`.
+    See the *Notes* section for a formal definition of the datum.
+
+    Parameters
+    ----------
+    locations_h : (n_loc, n_dim) array_like
+        Locations where the roving magnetic fields are measured.
+    locations_base : (n_loc, n_dim) array_like, optional
+        Locations where the base station magnetic fields are measured. Defaults to
+        the same locations as the roving magnetic fields measurements,
+        `locations_h`.
+    base_type : {'magnetic', 'electric'}, optional
+        Whether magnetic or electric fields are measured at the base station.
+        For magnetic fields, the quantity is unitless. For electric fields,
+        the quantity has units $A^2/V^2$.
+    component : {'real', 'imag'}, optional
+        Define the receiver to measure the real or imaginary component:
+        - 'real': Real component
+        - 'imag': Imaginary component
+    storeProjections : bool, optional
+        Whether to cache to internal projection matrices.
+
+    Notes
+    -----
+
+    Magnetic base station
+    ~~~~~~~~~~~~~~~~~~~~~
+    Consider an acquisition system that measures 3-component magnetic fields
+    in the air and magnetic fields at a base station. The fundamental set of
+    transfer functions (i.e. tippers) that can be generated from these
+    measurements is given by:
+
+    .. math::
+
+        \begin{bmatrix}
+        T_{xx} & T_{yx} & T_{zx} \\
+        T_{xy} & T_{yy} & T_{zy}
+        \end{bmatrix}
+        =
+        \begin{bmatrix}
+        H_x^{(x)} & H_y^{(x)} \\
+        H_x^{(y)} & H_y^{(y)}
+        \end{bmatrix}_b^{-1}
+        \,
+        \begin{bmatrix}
+        H_x^{(x)} & H_y^{(x)} & H_z^{(x)} \\
+        H_x^{(y)} & H_y^{(y)} & H_z^{(y)}
+        \end{bmatrix}_r
+
+    where subscript :math:`b` denotes the base station location and subscript
+    :math:`r` denotes the mobile receiver location.
+
+    For this system, the horizontal determinant transfer function is defined as:
+
+    .. math::
+
+        \det(T_H) = T_{xx}T_{yy} - T_{yx}T_{xy}
+
+    Electric base station
+    ~~~~~~~~~~~~~~~~~~~~~
+    Now consider an acquisition system that measures 3-component magnetic fields
+    in the air and electric fields at a base station. The fundamental set of
+    transfer functions (i.e. admittances) that can be generated from these
+    measurements is given by:
+
+    .. math::
+
+        \begin{bmatrix}
+        Y_{xx} & Y_{yx} & Y_{zx} \\
+        Y_{xy} & Y_{yy} & Y_{zy}
+        \end{bmatrix}
+        =
+        \begin{bmatrix}
+        E_x^{(x)} & E_y^{(x)} \\
+        E_x^{(y)} & E_y^{(y)}
+        \end{bmatrix}_b^{-1}
+        \,
+        \begin{bmatrix}
+        H_x^{(x)} & H_y^{(x)} & H_z^{(x)} \\
+        H_x^{(y)} & H_y^{(y)} & H_z^{(y)}
+        \end{bmatrix}_r
+
+    For this system, the horizontal determinant transfer function is defined as:
+
+    .. math::
+
+        \det(Y_H) = Y_{xx}Y_{yy} - Y_{yx}Y_{xy}
+
+    """
+
+    _loc_names = ("Roving magnetic field", "Base station field")
+
+    def __init__(
+        self,
+        locations_h,
+        locations_base=None,
+        base_type="magnetic",
+        component="real",
+        storeProjections=False,
+    ):
+        super().__init__(
+            locations_h=locations_h,
+            locations_base=locations_base,
+            base_type=base_type,
+            storeProjections=storeProjections,
+        )
+        self.component = component
+
+    @property
+    def component(self):
+        r"""Data type; i.e. "real", "imag", "amp".
+
+        The `component` property specifies
+        whether the data are:
+        - 'real': Real component
+        - 'imag': Imaginary component
+        - 'amp': Amplitude
+
+        Returns
+        -------
+        str
+            Data type; i.e. "real", "imag", "amp".
+        """
+        return self._component
+
+    @component.setter
+    def component(self, var):
+        self._component = validate_string(
+            "component",
+            var,
+            [
+                ("real", "re", "in-phase", "in phase"),
+                ("imag", "imaginary", "im", "out-of-phase", "out of phase"),
+                ("amp", "ampl", "amplitude"),
+            ],
+        )
+
+    def eval(self, src, mesh, f):  # noqa: A003 D102
+        # Doctring inherited from parent class (BaseNaturalSourceRx
+        vals = _eval_horizontal_determinant(self, src, mesh, f)
+        if self.component == "complex":
+            return vals
+        if self.component == "amp":
+            return np.abs(vals)
+        return getattr(vals, self.component)
+
+    def evalDeriv(  # noqa: D102
+        self, src, mesh, f, du_dm_v=None, v=None, adjoint=False
+    ):
+        # Doctring inherited from parent class (BaseNaturalSourceRx)
+        if self.component == "complex":
+            raise NotImplementedError(
+                "complex valued data derivative is not implemented."
+            )
+
+        return _eval_horizontal_determinant_deriv(
+            self, src, mesh, f, du_dm_v=du_dm_v, v=v, adjoint=adjoint
+        )
+
+
 class ApparentConductivity(_ElectricAndMagneticReceiver):
     r"""Receiver class for simulating apparent conductivity data (3D problems only).
 
-    This class is used to simulate an apparent conductivity datum, in S/m, as defined by:
+    This class is used to simulate an apparent conductivity datum, in S/m.
 
-    .. math::
-        \sigma_{app} = \mu_0 \omega \dfrac{\bar{H}^2}{ \bar{E} ^2}
+    .. warning:: Breaking change
 
-    where :math:`\omega` is the angular frequency in rad/s,
-
-    .. math::
-        \bar{H} \big |^2 = \big | \vec{H}^{(x)} \big |^2 + \big | \vec{H}^{(y)} \big |^2
-
-    and
-
-    .. math::
-        \bar{E}^2= \Big [ \big | E_x^{(x)} \big |^2 + \big | E_y^{(x)} \big |^2 \Big ]
-        = \Big [ \big | E_x^{(y)} \big |^2 + \big | E_y^{(y)} \big |^2 \Big ]
+        From SimPEG v0.26.0 onward, a new set of formulae have been adopted to
+        compute apparent conductivities. These more accurately reflect how apparent
+        conductivities can be computed from NSEM fields.
 
     Parameters
     ----------
@@ -1073,18 +2341,22 @@ class ApparentConductivity(_ElectricAndMagneticReceiver):
     locations_h : (n_loc, n_dim) array_like, optional
         Locations where the magnetic fields are measured. Defaults to the same
         locations as electric field measurements, `locations_e`.
-    storeProjections : bool
+    formula : {"root_gram_determinant", "cross_product_amplitude", "horizontal_determinant"}
+        The formula used to generate the appparent conductivity datum.
+    storeProjections : bool, optional
         Whether to cache to internal projection matrices.
-
-    Notes
-    -----
-    It is important to take the amplitudes of the fields resulting from x and y planewave
-    polarizations separately, then summing. Adding the fields from x and y planewaves then
-    summing can result in simulated anomalies which do not presented entirely over
-    conductive/resistive targets.
     """
 
-    def __init__(self, locations_e, locations_h=None, storeProjections=False):
+    _base_type = "electric"
+    _component = "amp"
+
+    def __init__(
+        self,
+        locations_e,
+        locations_h=None,
+        formula="cross_product_amplitude",
+        storeProjections=False,
+    ):
         if locations_h is None:
             locations_h = locations_e
         super().__init__(
@@ -1092,166 +2364,68 @@ class ApparentConductivity(_ElectricAndMagneticReceiver):
             locations2=locations_h,
             storeProjections=storeProjections,
         )
+        self.formula = formula
 
-    def _eval_apparent_conductivity(self, src, mesh, f):
-        if mesh.dim < 3:
-            raise NotImplementedError(
-                "ApparentConductivity receiver not implemented for dim < 3."
-            )
+    @property
+    def formula(self):
+        r"""Equation used to generate the apparent conductivity datum.
 
-        e = f[src, "e"]
-        h = f[src, "h"]
+        The `formula` property specifies
+        whether the data are derived using:
+        - 'root_gram_determinant': Root Gram determinant of the admittance matrix
+        - 'cross_product_amplitude': Cross product amplitude of the admittance matrix
+        - 'horizontal_determinant': Determinant of the horizontal admittances
 
-        ex = self.getP(mesh, "Ex", 0) @ e
-        ey = self.getP(mesh, "Ey", 0) @ e
-        hx = self.getP(mesh, "Fx", 1) @ h
-        hy = self.getP(mesh, "Fy", 1) @ h
-        hz = self.getP(mesh, "Fz", 1) @ h
+        Returns
+        -------
+        str
+            Data type; i.e. "root_gram_determinant", "cross_product_amplitude", or
+            "horizontal_determinant".
+        """
+        return self._formula
 
-        top = np.sum(np.abs(hx) ** 2 + np.abs(hy) ** 2 + np.abs(hz) ** 2, axis=-1)
-        bot = np.sum(np.abs(ex) ** 2 + np.abs(ey) ** 2, axis=-1)
+    @formula.setter
+    def formula(self, var):
+        self._formula = validate_string(
+            "formula",
+            var,
+            [
+                "root_gram_determinant",
+                "cross_product_amplitude",
+                "horizontal_determinant",
+            ],
+        )
 
-        return (2 * np.pi * src.frequency * mu_0) * top / bot
+    def eval(self, src, mesh, f):  # noqa: A003 D102
+        # Docstring inherited from parent class
+        # scaling by w*mu_0 happens inside function
+        if self._formula == "root_gram_determinant":
+            return _eval_root_gram_determinant(self, src, mesh, f) / _alpha(src)
+        if self._formula == "cross_product_amplitude":
+            return _eval_cross_product_amplitude(self, src, mesh, f) / _alpha(src)
+        if self._formula == "horizontal_determinant":
+            return _eval_horizontal_determinant(self, src, mesh, f) / _alpha(src)
+        raise ValueError()  # pragma: nocover
 
-    def _eval_apparent_conductivity_deriv(
+    def evalDeriv(  # noqa: A003 D102
         self, src, mesh, f, du_dm_v=None, v=None, adjoint=False
     ):
-        if mesh.dim < 3:
-            raise NotImplementedError(
-                "Admittance receiver not implemented for dim < 3."
+        # Docstring inherited from parent class
+        # scaling by w*mu_0 happens inside function
+        scale = _alpha(src) ** -1
+        if self._formula == "root_gram_determinant":
+            return _eval_root_gram_determinant_deriv(
+                self, src, mesh, f, du_dm_v=du_dm_v, v=v, adjoint=adjoint, scale=scale
             )
-
-        # Compute admittances
-        e = f[src, "e"]
-        h = f[src, "h"]
-
-        Pex = self.getP(mesh, "Ex", 0)
-        Pey = self.getP(mesh, "Ey", 0)
-        Phx = self.getP(mesh, "Fx", 1)
-        Phy = self.getP(mesh, "Fy", 1)
-        Phz = self.getP(mesh, "Fz", 1)
-
-        ex = Pex @ e
-        ey = Pey @ e
-        hx = Phx @ h
-        hy = Phy @ h
-        hz = Phz @ h
-
-        fact = 2 * np.pi * src.frequency * mu_0
-        top = np.sum(np.abs(hx) ** 2 + np.abs(hy) ** 2 + np.abs(hz) ** 2, axis=-1)
-        bot = np.sum(np.abs(ex) ** 2 + np.abs(ey) ** 2, axis=-1)
-
-        # ADJOINT
-        if adjoint:
-            # Compute: J_T * v = d_top_T * a_v + d_bot_T * b
-            a_v = fact * np.c_[v] / bot[:, None]  # term 1
-            b_v = np.c_[v] * (-fact * top / (bot**2))[:, None]  # term 2
-
-            ghx_v = np.einsum("ij,ik->ijk", a_v, hx).reshape((hx.shape[0], -1))
-            ghy_v = np.einsum("ij,ik->ijk", a_v, hy).reshape((hy.shape[0], -1))
-            ghz_v = np.einsum("ij,ik->ijk", a_v, hz).reshape((hz.shape[0], -1))
-            gex_v = np.einsum("ij,ik->ijk", b_v, ex).reshape((ex.shape[0], -1))
-            gey_v = np.einsum("ij,ik->ijk", b_v, ey).reshape((ey.shape[0], -1))
-            e_v = (
-                2 * (Pex.T @ csr_matrix(gex_v) + Pey.T @ csr_matrix(gey_v)).conjugate()
+        if self._formula == "cross_product_amplitude":
+            return _eval_cross_product_amplitude_deriv(
+                self, src, mesh, f, du_dm_v=du_dm_v, v=v, adjoint=adjoint, scale=scale
             )
-            h_v = (
-                2
-                * (
-                    Phx.T @ csr_matrix(ghx_v)
-                    + Phy.T @ csr_matrix(ghy_v)
-                    + Phz.T @ csr_matrix(ghz_v)
-                ).conjugate()
+        if self._formula == "horizontal_determinant":
+            return _eval_horizontal_determinant_deriv(
+                self, src, mesh, f, du_dm_v=du_dm_v, v=v, adjoint=adjoint, scale=scale
             )
-
-            fu_e_v, fm_e_v = f._eDeriv(src, None, e_v, adjoint=True)
-            fu_h_v, fm_h_v = f._hDeriv(src, None, h_v, adjoint=True)
-
-            return fu_e_v + fu_h_v, fm_e_v + fm_h_v
-
-        # JVEC
-        de_v = f._eDeriv(src, du_dm_v, v, adjoint=False)
-        dh_v = f._hDeriv(src, du_dm_v, v, adjoint=False)
-
-        dex_v = Pex @ de_v
-        dey_v = Pey @ de_v
-        dhx_v = Phx @ dh_v
-        dhy_v = Phy @ dh_v
-        dhz_v = Phz @ dh_v
-
-        # Imaginary components cancel and its 2x the real of the conjugate x the deriv
-        dtop_v = 2 * np.sum(
-            (
-                hx.conjugate() * dhx_v + hy.conjugate() * dhy_v + hz.conjugate() * dhz_v
-            ).real,
-            axis=-1,
-        )
-        dbot_v = 2 * np.sum(
-            (ex.conjugate() * dex_v + ey.conjugate() * dey_v).real, axis=-1
-        )
-
-        return fact * (bot * dtop_v - top * dbot_v) / (bot * bot)
-
-    def eval(self, src, mesh, f):  # noqa: A003
-        """Compute receiver data from the discrete field solution.
-
-        Parameters
-        ----------
-        src : .frequency_domain.sources.BaseFDEMSrc
-            NSEM source.
-        mesh : discretize.TensorMesh
-            Mesh on which the discretize solution is obtained.
-        f : simpeg.electromagnetics.frequency_domain.fields.FieldsFDEM
-            NSEM fields object of the source.
-
-        Returns
-        -------
-        numpy.ndarray
-            Evaluated data for the receiver.
-        """
-        return self._eval_apparent_conductivity(src, mesh, f)
-
-    def evalDeriv(self, src, mesh, f, du_dm_v=None, v=None, adjoint=False):
-        r"""Derivative of data with respect to the fields.
-
-        Let :math:`\mathbf{d}` represent the data corresponding the receiver object.
-        And let :math:`\mathbf{u}` represent the discrete numerical solution of the
-        fields on the mesh. Where :math:`\mathbf{P}` is a projection function that
-        maps from the fields to the data, i.e.:
-
-        .. math::
-            \mathbf{d} = \mathbf{P}(\mathbf{u})
-
-        this method computes and returns the derivative:
-
-        .. math::
-            \dfrac{\partial \mathbf{d}}{\partial \mathbf{u}} =
-            \dfrac{\partial [ \mathbf{P} (\mathbf{u}) ]}{\partial \mathbf{u}}
-
-        Parameters
-        ----------
-        src : .frequency_domain.sources.BaseFDEMSrc
-            The NSEM source.
-        mesh : discretize.TensorMesh
-            Mesh on which the discretize solution is obtained.
-        f : simpeg.electromagnetics.frequency_domain.fields.FieldsFDEM
-            NSEM fields object for the source.
-        du_dm_v : None, optional
-            Supply pre-computed derivative?
-        v : numpy.ndarray, optional
-            Vector of size
-        adjoint : bool, optional
-            Whether to compute the ajoint operation.
-
-        Returns
-        -------
-        numpy.ndarray
-            Calculated derivative (n_data,) if `adjoint` is ``False``,
-            and (n_param, 2) if `adjoint` is ``True``, for both polarizations.
-        """
-        return self._eval_apparent_conductivity_deriv(
-            src, mesh, f, du_dm_v=du_dm_v, v=v, adjoint=adjoint
-        )
+        raise ValueError()  # pragma: nocover
 
 
 @deprecate_class(removal_version="0.24.0", error=True, replace_docstring=False)

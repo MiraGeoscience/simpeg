@@ -8,6 +8,7 @@ from ..frequency_domain.simulation import BaseFDEMSimulation, Simulation3DElectr
 from ..frequency_domain.survey import Survey
 from ..utils import omega
 from .sources import Planewave
+from .receivers import Impedance, Tipper, Admittance
 from .fields import (
     Fields1DPrimarySecondary,
     Fields1DElectricField,
@@ -18,6 +19,7 @@ from .fields import (
 
 
 def _centers_to_widths(centers):
+    """Cell widths from cell centers measured from the start of the first cell."""
     centers = np.asarray(centers)
     d = np.empty_like(centers)
     n = centers.shape[-1]
@@ -37,7 +39,7 @@ class Simulation1DElectricField(BaseFDEMSimulation):
     1D finite volume simulation for the natural source electromagnetic problem.
 
     This corresponds to the TE mode 2D simulation where the electric field is
-    located at cell centers and the magnetic flux is on edges.
+    located on nodes and the magnetic field at cell centers.
 
     We are solving the discrete version of
 
@@ -52,12 +54,12 @@ class Simulation1DElectricField(BaseFDEMSimulation):
 
     When we discretize, we obtain:
 
-    where the Magnetic field is defined on edges, and the electric field is
+    where the electric field is defined on nodes, and the magnetic field is
     defined on cell centers.
     """
 
     _solutionType = "eSolution"
-    _formulation = "EB"  # electric-field component is on cell-centers
+    _formulation = "EB"  # electric-field component is on nodes
     fieldsPair = Fields1DElectricField
 
     def __init__(self, mesh, **kwargs):
@@ -118,7 +120,7 @@ class Simulation1DElectricField(BaseFDEMSimulation):
             This method hasn't been implemented yet for this class.
 
         Raises
-        -------
+        ------
         NotImplementedError
         """
         msg = (
@@ -197,7 +199,7 @@ class Simulation1DMagneticField(BaseFDEMSimulation):
             This method hasn't been implemented yet for this class.
 
         Raises
-        -------
+        ------
         NotImplementedError
         """
         msg = (
@@ -307,11 +309,14 @@ class Simulation2DElectricField(BaseFDEMSimulation):
 
         for src in self.survey.source_list:
             for rx in src.receiver_list:
-                if rx.orientation != "xy":
+                if not (
+                    (rx.orientation == "xy" and isinstance(rx, Impedance))
+                    or (rx.orientation == "yx" and isinstance(rx, Admittance))
+                ):
                     raise TypeError(
-                        "natural_source.Simulation2DElectricField only supports xy oriented"
-                        " receivers. Please use the Simulation2DMagneticField class for"
-                        " those receivers."
+                        "natural_source.Simulation2DElectricField only supports Impedance for"
+                        " an xy receiver orientation OR Admittance for a yx receiver"
+                        " orientation. Please provide a survey with valid receivers."
                     )
 
         if h_bc is None:
@@ -331,8 +336,8 @@ class Simulation2DElectricField(BaseFDEMSimulation):
                     is_b[-1, :] = True
                     P_r = maps.Projection(mesh.n_cells, is_b.reshape(-1, order="F"))
                 else:
-                    h_l = _centers_to_widths(b_e[left][:, 1])
-                    h_r = _centers_to_widths(b_e[right][:, 1])
+                    h_l = _centers_to_widths(b_e[left][:, 1] - mesh.nodes_y[0])
+                    h_r = _centers_to_widths(b_e[right][:, 1] - mesh.nodes_y[0])
                     b_l, b_r, _, __ = mesh.cell_boundary_indices
                     P_l = maps.Projection(mesh.n_cells, b_l)
                     P_r = maps.Projection(mesh.n_cells, b_r)
@@ -533,11 +538,15 @@ class Simulation2DMagneticField(BaseFDEMSimulation):
 
         for src in self.survey.source_list:
             for rx in src.receiver_list:
-                if rx.orientation != "yx":
+                if not (
+                    (rx.orientation == "yx" and isinstance(rx, Impedance))
+                    or (rx.orientation == "xy" and isinstance(rx, Admittance))
+                    or (rx.orientation == "zx" and isinstance(rx, Tipper))
+                ):
                     raise TypeError(
-                        "natural_source.Simulation2DMagneticField only supports yx oriented"
-                        " receivers. Please use the Simulation2DElectricField class for"
-                        " those receivers."
+                        "natural_source.Simulation2DMagneticField supports Impedance and"
+                        " Admittance receivers for an yx orientation, and Tipper receivers"
+                        " for a zx orientation. Please provide a survey with valid receivers."
                     )
 
         if e_bc is None:
@@ -557,8 +566,8 @@ class Simulation2DMagneticField(BaseFDEMSimulation):
                     is_b[-1, :] = True
                     P_r = maps.Projection(mesh.n_cells, is_b.reshape(-1, order="F"))
                 else:
-                    h_l = _centers_to_widths(b_e[left][:, 1])
-                    h_r = _centers_to_widths(b_e[right][:, 1])
+                    h_l = _centers_to_widths(b_e[left][:, 1] - mesh.nodes_y[0])
+                    h_r = _centers_to_widths(b_e[right][:, 1] - mesh.nodes_y[0])
                     b_l, b_r, _, __ = mesh.cell_boundary_indices
                     P_l = maps.Projection(mesh.n_cells, b_l)
                     P_r = maps.Projection(mesh.n_cells, b_r)

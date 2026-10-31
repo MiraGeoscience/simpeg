@@ -6,10 +6,16 @@ from ._base import (
     SphericalSystem,
     SumMap,
     TileMap,
+    TileMapNested,
     Wires,
 )
 from ._clustering import PolynomialPetroClusterMap
-from ._injection import Mesh2Mesh, InjectActiveCells
+from ._injection import (
+    Mesh2Mesh,
+    InjectActiveCells,
+    InjectActiveFaces,
+    InjectActiveEdges,
+)
 from ._property_maps import (
     ChiMap,
     ComplexMap,
