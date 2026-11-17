@@ -27,12 +27,12 @@ requirements:
   host:
     - python ${{ python_min }}.*
     - setuptools >=64
-    - setuptools_scm >=8
+    - setuptools_scm >=9.2.0,<10.0
     - pip
   run:
     - python >=${{ python_min }}
     # Mira packages
-    - geoh5py >=0.13.0b1, 0.13.*
+    - geoh5py >=0.14.0a2.dev209
     # direct dependencies
     - dask-core *
     - discretize >=0.11
