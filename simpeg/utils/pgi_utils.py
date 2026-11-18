@@ -335,7 +335,9 @@ class WeightedGaussianMixture(GaussianMixture if sklearn else object):
                 warnings.simplefilter("ignore")
                 label = (
                     KMeans(
-                        n_clusters=self.n_components, n_init=1, random_state=random_state
+                        n_clusters=self.n_components,
+                        n_init=1,
+                        random_state=random_state,
                     )
                     .fit(X, sample_weight=self.cell_volumes)
                     .labels_

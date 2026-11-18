@@ -78,7 +78,6 @@ from .multiprocessing import (
 try:
     from .dask_sim import (
         DaskMetaSimulation,
-        DaskMetaSimulationExplicit,
         DaskSumMetaSimulation,
         DaskRepeatedSimulation,
     )

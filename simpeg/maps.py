@@ -3389,7 +3389,7 @@ class InjectActiveCells(IdentityMap):
 
     @property
     def indActive(self):
-        """
+        """Boolean mask of active cells.
 
         Returns
         -------
@@ -6137,7 +6137,8 @@ class TileMap(IdentityMap):
         enforce_active=True,
         **kwargs,
     ):
-        """
+        """Map values from a global mesh to a local mesh.
+
         Parameters
         ----------
         global_mesh : discretize.TreeMesh

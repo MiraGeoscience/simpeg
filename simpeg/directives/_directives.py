@@ -2826,14 +2826,17 @@ class ScaleMisfitMultipliers(InversionDirective):
         Replace leaf elements of `nesting` with values from `values` (in order).
         Assumes the number of leaf positions equals len(values).
 
-        Parameters:
+        Parameters
+        ----------
         - nesting: arbitrarily nested list structure; leaves are non-list values
         - values: flat iterable whose values will fill the leaves in order
 
-        Returns:
+        Returns
+        -------
         - A new nested structure with leaves replaced by values from `values`.
 
-        Raises:
+        Raises
+        ------
         - ValueError if `values` has fewer or more elements than required by `nesting`.
         """
         indices = np.arange(len(self.invProb.dmisfit.objfcts))

@@ -17,9 +17,12 @@ authors = [
 keywords = ["geophysics", "inverse problem"]
 
 dependencies = [
+    # Mira packages
+    "geoh5py>=0.14.0b1,<0.15.0",
+    # "geoh5py @ git+https://github.com/MiraGeoscience/geoh5py.git@release/ga-4.9",
+    # other direct dependencies
     "discretize>=0.11",
     "geoana>=0.7.0",
-    "geoh5py>=0.13.0b1",
     "libdlf",
     "matplotlib",
     "numpy>=1.22",
@@ -56,7 +59,7 @@ Documentation = 'https://docs.simpeg.xyz'
 Repository = "http://github.com/MiraGeoscience/simpeg"
 
 [project.optional-dependencies]
-dask = ["dask", "zarr", "fsspec>=0.3.3"]
+dask = ["dask", "distributed", "zarr", "fsspec>=0.3.3"]
 choclo = ["choclo>=0.3.0"]
 reporting = ["scooby"]
 plotting = ["plotly"]
@@ -66,15 +69,16 @@ all = [
     "simpeg[dask,choclo,plotting,reporting,sklearn,pandas]"
 ] # all optional *runtime* dependencies (not related to development)
 style = [
-    "black==26.3.1",
-    "flake8==7.0.0",
+    "black==26.10.1",
+    "flake8==7.5.0",
     "flake8-bugbear==23.12.2",
     "flake8-builtins==2.2.0",
     "flake8-mutable==1.2.0",
     "flake8-rst-docstrings==0.3.0",
     "flake8-docstrings==1.7.0",
     "flake8-pyproject==1.2.3",
-    "ruff==0.16.6",
+    "mypy==1.15.0",
+    "ruff==0.17.5",
 ]
 docs = [
     "sphinx",
@@ -138,7 +142,7 @@ exclude_also = [
 directory = "coverage_html_report"
 
 [tool.black]
-required-version = '26.3.1'
+required-version = '26.10.1'
 target-version = ["py312", "py313", "py314"]
 
 
