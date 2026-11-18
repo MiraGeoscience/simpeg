@@ -76,7 +76,7 @@ jobs:
           key: conda-${{ env.PYTHON }}-${{ hashFiles(env.ENVIRONMENT) }}
 
       - name: Setup Miniforge
-        uses: conda-incubator/setup-miniconda@be893c923ea9cf1cf7cd510fbdde27c7e18cbdcb
+        uses: conda-incubator/setup-miniconda@be893c923ea9cf1cf7cd510fbdde27c7e18cbdcb # v4.1.0
         with:
           python-version: ${{ env.PYTHON }}
           miniforge-version: latest
