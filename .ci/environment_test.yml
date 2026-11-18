@@ -47,3 +47,5 @@ dependencies:
   - wheel
   - twine
   - python-build
+  - pip:
+      - "geoh5py>=0.14.0b1,<0.15.0"
