@@ -30,8 +30,7 @@ to simulate the fields at each time channel with sufficient accuracy.
 
 from discretize import TreeMesh
 from discretize.utils import mkvc, refine_tree_xyz
-from SimPEG import dask
-from SimPEG.utils import plot2Ddata, surface2ind_topo, model_builder
+from SimPEG.utils import surface2ind_topo, model_builder
 from SimPEG import (
     data,
     data_misfit,
@@ -158,7 +157,7 @@ source_list = []  # Create empty list to store sources
 # Each unique location defines a new transmitter
 value_sortings = []
 rx_counter = 0
-for ii in range(1):
+for _ in range(1):
     nrx = receiver_locations.shape[0]
     # Here we define receivers that measure the h-field in A/m
     dbzdt_receiver = tdem.receivers.PointMagneticFluxTimeDerivative(
