@@ -30,6 +30,7 @@ to simulate the fields at each time channel with sufficient accuracy.
 
 from discretize import TreeMesh
 from discretize.utils import mkvc, refine_tree_xyz
+from SimPEG import dask  # noqa: F401  # Installs the TDEM sensitivity methods.
 from SimPEG.utils import surface2ind_topo, model_builder
 from SimPEG import (
     data,
