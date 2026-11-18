@@ -13,6 +13,7 @@ dependencies:
 
 # optional dependencies
   - dask
+  - distributed
   - zarr
   - fsspec>=0.3.3
   - choclo>=0.3.0

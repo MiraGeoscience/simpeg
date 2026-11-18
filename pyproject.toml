@@ -59,7 +59,7 @@ Documentation = 'https://docs.simpeg.xyz'
 Repository = "http://github.com/MiraGeoscience/simpeg"
 
 [project.optional-dependencies]
-dask = ["dask", "zarr", "fsspec>=0.3.3"]
+dask = ["dask", "distributed", "zarr", "fsspec>=0.3.3"]
 choclo = ["choclo>=0.3.0"]
 reporting = ["scooby"]
 plotting = ["plotly"]
