@@ -24,22 +24,10 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  call-workflow-zizmor-annotate:
-    name: Zizmor analysis (advanced security)
-    # run on the Mira repo only (upstream SimPEG repo has its own workflow for Zizmor)
-    if: ${{ github.event_name != 'pull_request' && startsWith(github.repository, 'MiraGeoscience/') }}
+  zizmor:
+    name: Zizmor analysis
     permissions:
       security-events: write
       contents: read
       actions: read
-    uses: MiraGeoscience/CI-tools/.github/workflows/reusable-zizmor-advanced-security.yml@edb72d7524d25db3b4eb976890eb6837a8eb39f8 # v4.0.1
-
-  call-workflow-zizmor-advanced-security:
-    name: Zizmor analysis (annotate)
-    # run on the Mira repo only (upstream SimPEG repo has its own workflow for Zizmor)
-    if: ${{ github.event_name == 'pull_request'  && startsWith(github.repository, 'MiraGeoscience/') }}
-    permissions:
-      checks: write
-      contents: read
-      actions: read
-    uses: MiraGeoscience/CI-tools/.github/workflows/reusable-zizmor-annotate.yml@edb72d7524d25db3b4eb976890eb6837a8eb39f8 # v4.0.1
+    uses: MiraGeoscience/CI-tools/.github/workflows/reusable-zizmor.yml@edb72d7524d25db3b4eb976890eb6837a8eb39f8 # v4.0.1
