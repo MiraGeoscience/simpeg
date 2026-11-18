@@ -26,6 +26,8 @@ concurrency:
 jobs:
   zizmor:
     name: Zizmor analysis
+    # run on the Mira repo only (upstream SimPEG repo has its own workflow for Zizmor)
+    if: ${{ startsWith(github.repository, 'MiraGeoscience/') }}
     permissions:
       security-events: write
       contents: read
