@@ -183,7 +183,7 @@ class SaveArrayGeoH5(BaseSaveGeoH5, ABC):
         super().__init__(h5_object, **kwargs)
 
     @property
-    def data_type_attributes(self):
+    def data_type_attributes(self) -> dict | None:
         """
         Attributes to be added to the data type of the saved data.
         """
