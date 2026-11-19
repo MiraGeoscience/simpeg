@@ -11,7 +11,7 @@ from ._directives import InversionDirective
 from simpeg.maps import IdentityMap
 
 from geoh5py.data import FloatData
-from geoh5py.data.data_type import ReferencedValueMapType
+from geoh5py.data.data_type import DataType, ReferencedValueMapType
 from geoh5py.groups.property_group import GroupTypeEnum
 from geoh5py.groups import UIJsonGroup
 from geoh5py.objects import ObjectBase
@@ -171,14 +171,30 @@ class SaveArrayGeoH5(BaseSaveGeoH5, ABC):
         transforms: list | tuple = (),
         reshape=None,
         sorting=None,
+        data_type_attributes: dict | None = None,
         **kwargs,
     ):
         self.data_type = {}
         self.transforms = transforms
         self.sorting = sorting
         self.reshape = reshape
+        self.data_type_attributes = data_type_attributes
 
         super().__init__(h5_object, **kwargs)
+
+    @property
+    def data_type_attributes(self):
+        """
+        Attributes to be added to the data type of the saved data.
+        """
+        return self._data_type_attributes
+
+    @data_type_attributes.setter
+    def data_type_attributes(self, value: dict | None):
+        if not isinstance(value, dict | type(None)):
+            raise TypeError("'data_type_attributes' must be a dictionary or None")
+
+        self._data_type_attributes = value
 
     @property
     def reshape(self):
@@ -293,6 +309,8 @@ class SaveArrayGeoH5(BaseSaveGeoH5, ABC):
                         }
                     )
                     if data_type is None:
+                        self.data_type[component][ii] = data.entity_type
+
                         type_name = f"{self._attribute_type}"
 
                         if component:
@@ -301,8 +319,17 @@ class SaveArrayGeoH5(BaseSaveGeoH5, ABC):
                         if label:
                             type_name += f"_{label}"
 
-                        self.data_type[component][ii] = data.entity_type
                         data.entity_type.name = type_name
+
+                        self._format_data_type(data.entity_type)
+
+    def _format_data_type(self, data_type: DataType):
+        """
+        Apply the data type attributes to the data type of the saved data.
+        """
+        if self.data_type_attributes is not None:
+            for key, value in self.data_type_attributes.items():
+                setattr(data_type, key, value)
 
 
 class SaveModelGeoH5(SaveArrayGeoH5):
