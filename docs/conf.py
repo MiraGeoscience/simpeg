@@ -48,7 +48,6 @@ extensions = [
     "sphinx.ext.intersphinx",
     "sphinx.ext.mathjax",
     "sphinx_gallery.gen_gallery",
-    "sphinx.ext.todo",
     "matplotlib.sphinxext.plot_directive",
     "sphinx_reredirects",
 ]

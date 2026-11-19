@@ -1050,10 +1050,8 @@ class SelfConsistentEffectiveMedium(IdentityMap):
 
         **Ellipsoids**
 
-        .. todo::
-
-            Aligned Ellipsoids have not yet been implemented, only randomly
-            oriented ellipsoids
+        Aligned ellipsoids have not yet been implemented, only randomly
+        oriented ellipsoids.
 
         If the inclusions are aligned ellipsoids, we solve
 
