@@ -32,7 +32,7 @@ requirements:
   run:
     - python >=${{ python_min }}, <4.0
     # Mira packages
-    - geoh5py >=0.14.0b1, <0.15.0
+    - geoh5py >=0.14.0b1, 0.14.*
     # other direct dependencies
     - dask-core *
     - discretize >=0.11
