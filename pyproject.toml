@@ -18,8 +18,8 @@ keywords = ["geophysics", "inverse problem"]
 
 dependencies = [
     # Mira packages
-    "geoh5py>=0.14.0b1,<0.15.0",
     # "geoh5py @ git+https://github.com/MiraGeoscience/geoh5py.git@release/ga-4.9",
+    "geoh5py>=0.14.0b1,==0.14.*",
     # other direct dependencies
     "discretize>=0.11",
     "geoana>=0.7.0",
