@@ -36,7 +36,7 @@ requirements:
     # other direct dependencies
     - dask-core *
     - discretize >=0.11
-    - distributed *
+    - distributed >=2026.1.0  # GHSA-c336-7962-wfj2
     - fsspec >=0.3.3
     - geoana >=0.7.0
     - libdlf *
